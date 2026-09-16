@@ -1,0 +1,48 @@
+﻿# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment and secrets
+.env
+.env.*
+*.env
+*.env.*
+*token.json*
+*credentials.json*
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+.mypy_cache/
+.pytest_cache/
+
+# Build/output
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Caches
+.cache/
+.ruff_cache/
+**/.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Local test reports
+test_reports/
+
+# Emergent metadata
+.emergent/
