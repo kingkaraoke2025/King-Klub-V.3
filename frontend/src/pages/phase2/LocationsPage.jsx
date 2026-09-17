@@ -17,8 +17,17 @@ const LocationsPage = () => {
   const canManage = isGlobalAdmin(user);
 
   const load = async () => {
-    try { setLocations(await p2.locations()); }
-    catch (e) { toast.error(e.response?.data?.detail || 'Failed to load locations'); }
+    try {
+      let locs = await p2.locations();
+      // Role-based UI scoping: non-global-admin sees only locations that contain
+      // a venue they are scoped to (backend remains authoritative).
+      if (!canManage) {
+        const venues = await p2.venues().catch(() => []);
+        const allowed = new Set(venues.map((v) => v.location_id));
+        locs = locs.filter((l) => allowed.has(l.id));
+      }
+      setLocations(locs);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to load locations'); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);

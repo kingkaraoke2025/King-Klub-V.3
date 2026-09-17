@@ -216,3 +216,36 @@ event queue + perks; legacy nightly retired (403); singer denied staff endpoints
 - P1: Optional admin UI screens for locations/venues/events/event-QR (Phase 2 was backend-only; current UI is Phase 1).
 - P1: Apply data-backfill migrations 0003/0004 with `--execute` if legacy data is ever imported (currently dry-run, DB is fresh).
 - P0 (gated): Production cutover planning — do NOT run until explicitly approved.
+
+---
+
+# Phase 2 Admin UI + Staff-Login Fix (2026-06) — dev workspace
+
+**Status: Built & verified (testing_agent: all primary flows PASS; backend smoke 30/30). NOT deployed.**
+
+## Reported bug fixed
+- "login failed" at Staff Portal: `/admin/login` previously required `is_admin=true`, rejecting `venue_kj`/`location_manager`.
+  Fix: login/`/auth/me` now return `role`/`role_scope`; `AdminLoginPage` admits all staff roles and routes
+  global_admin -> `/admin`, other staff -> `/admin/phase2`. Verified by testing_agent.
+
+## Frontend files added
+- `src/lib/phase2Api.js`, `src/components/Phase2Shell.jsx`
+- `src/pages/phase2/LocationsPage.jsx`, `VenuesPage.jsx`, `EventsPage.jsx`, `EventManagePage.jsx`
+- `src/pages/EventCheckInPage.jsx` (singer `/e/checkin/:token`)
+
+## Frontend files modified
+- `src/App.js` (staff-aware ProtectedRoute + Phase 2 routes + `/e/checkin/:token`)
+- `src/pages/AdminLoginPage.js` (staff-role login), `src/pages/AdminPage.js` (Phase 2 Admin button)
+
+## Backend files modified (small, justified)
+- `server.py` — login & `/auth/me` return `role`/`role_scope`.
+- `phase2_server.py` — added PUT edit endpoints (locations/venues/events) + friendly 400 on duplicate name.
+
+## UI screens
+Locations (list/create/edit, role-scoped grid) -> Venues (list/create/edit) -> Events (list/create/edit, status) ->
+Event Management tabs: Overview, QR (image/copy URL/regenerate/expiry), Singers (award points), Queue (KJ controls),
+Points/Leaderboard (event + current season). Royal/gold theme preserved; role-based control hiding; backend authoritative.
+
+## Verified (testing_agent iteration_6)
+staff login fix, singer rejection, full L->V->E CRUD, all event tabs, QR-token check-in, singer isolation across events,
+points award + season leaderboard, venue_kj control hiding + backend cross-scope 403, Phase 1 regression. Backend 30/30 smoke.
