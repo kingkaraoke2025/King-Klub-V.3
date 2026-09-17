@@ -261,3 +261,17 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 **Verified (testing_agent iteration_8, 6/6 + regression):** QR renders & regenerates, event switching, singer QR check-in, event scoping (singer only in selected event), duplicate protection, tampered-token rejection, staff access (venue_kj) + singer redirect. Backend smoke still 30/30.
 
 **Known pre-existing (out of scope):** WS `/api/ws` upgrade warnings via ingress; a 429 burst on singer `/dashboard` polling — candidates for a future iteration.
+
+---
+
+# Bug fix: song queue not recognizing Phase 2 event check-in (2026-06) — dev workspace
+
+**Reported:** dakota@hotmail.com checked in via Phase 2 event QR but the song queue still said "You still need to check in."
+
+**Root cause:** Legacy queue endpoints (`/api/queue`, `/api/queue/my-status`, `/api/queue/perk-status`, `/api/queue/use-perk`) gated on the RETIRED nightly `db.checkins` record. Phase 2 stores check-ins in `event_participation` (status='checked_in'), so the legacy lookup always returned None -> "check in first".
+
+**Fix (backend only, server.py):** Added `resolve_active_event_checkin(user)` — returns the user's current ACTIVE-event Phase 2 participation (most-recent active event) or None; does NOT fall back to nightly `checkins`. Wired into all four legacy queue endpoints. Queue items now tagged with `event_id`; 30-min song window + perk usage are per-event (Event A vs B isolation). Requirement preserved: unchecked singers still blocked (400 / can_add_songs=false).
+
+**Verified:** testing_agent iteration_9 (100% frontend, end-to-end before->after, isolation, duplicate/tampered) + backend phase2_smoke 30/30 + final_e2e 38/38.
+
+**Known pre-existing (out of scope):** `/api/ws` WebSocket console noise on every page (non-blocking).

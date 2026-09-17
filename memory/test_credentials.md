@@ -13,6 +13,7 @@
 | venue_kj | `kj@kingkaraoke2025.com` | `Kj!2026` | "Test Venue" |
 | singer | `singer1@kingkaraoke2025.com` | `Singer!2026` | — |
 | singer | `singer2@kingkaraoke2025.com` | `Singer!2026` | — |
+| singer | `dakota@hotmail.com` | `Dakota!2026` | — |
 
 Routing: global_admin → `/admin` (has "Phase 2 Admin" button → `/admin/phase2`); other staff → `/admin/phase2`.
 
