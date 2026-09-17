@@ -1,19 +1,25 @@
 # Test Credentials — King Klub Phase 2 (isolated DEV workspace)
 
 > Isolated development workspace. Fresh local MongoDB (`king_klub_phase2_dev`). NOT production.
-> Seed/reseed with: `python /app/backend/seed_dev.py`
+> Re-seed users + named scenario with: `python /app/backend/setup_final_scenario.py` (idempotent)
+> Basic user seed only: `python /app/backend/seed_dev.py`
 
-## Global Admin (role: global_admin)
-- Email: `dev-admin@kingkaraoke2025.com`
-- Password: `DevKing!2026`  (from backend/.env `DEV_ADMIN_PASSWORD`)
+## Staff login page: `/admin/login`  ·  Singer login: `/login`
 
-## Singers (role: singer)
-- `singer1@kingkaraoke2025.com` / `Singer!2026`  (id: dev-singer-0001)
-- `singer2@kingkaraoke2025.com` / `Singer!2026`  (id: dev-singer-0002)
+| Role | Email | Password | Scope |
+|---|---|---|---|
+| global_admin | `dev-admin@kingkaraoke2025.com` | `DevKing!2026` | all |
+| location_manager | `lm@kingkaraoke2025.com` | `Manager!2026` | "Test Location" |
+| venue_kj | `kj@kingkaraoke2025.com` | `Kj!2026` | "Test Venue" |
+| singer | `singer1@kingkaraoke2025.com` | `Singer!2026` | — |
+| singer | `singer2@kingkaraoke2025.com` | `Singer!2026` | — |
 
-## Venue KJ (role: venue_kj) — created by phase2_smoke.py test run
-- `kj@kingkaraoke2025.com` / `Kj!2026`  (scoped to the "Royal Stage" venue only)
+Routing: global_admin → `/admin` (has "Phase 2 Admin" button → `/admin/phase2`); other staff → `/admin/phase2`.
+
+## Named verification scenario (created by setup_final_scenario.py)
+- Test Location → Test Venue → Event A "Test Karaoke Night", Event B "Second Night"
+- Out-of-scope (negative tests): Other Location → Other Venue → Other Event
 
 Notes:
-- Roles are resolved from the DB record (users.role / users.role_scope), not the JWT.
-- Legacy nightly QR/check-in/leaderboard are retired via flags (LEGACY_NIGHTLY_ENABLED=false, LEGACY_QR_ENABLED=false).
+- Roles resolved from DB record (users.role / users.role_scope), not the JWT.
+- Legacy nightly QR/check-in/leaderboard retired via flags (LEGACY_NIGHTLY_ENABLED=false, LEGACY_QR_ENABLED=false).
