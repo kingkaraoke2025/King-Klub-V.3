@@ -65,6 +65,23 @@ def require_staff(user: dict) -> None:
         raise HTTPException(status_code=403, detail="Staff access required")
 
 
+def can_access_location(user: dict, location_id: str) -> bool:
+    """True iff the user may manage resources under this location.
+    global_admin -> any; location_manager -> location_id in scope; others -> False."""
+    role = roles.resolve_role(user)
+    if role == roles.ROLE_GLOBAL_ADMIN:
+        return True
+    if role == roles.ROLE_LOCATION_MANAGER:
+        return location_id in _scope(user)["location_ids"]
+    return False
+
+
+def require_location_staff(user: dict, location_id: str) -> None:
+    """Manage venues within a location: global_admin or the location's manager."""
+    if not can_access_location(user, location_id):
+        raise HTTPException(status_code=403, detail="Not authorized for this location")
+
+
 def events_scope_query(user: dict) -> dict:
     """Mongo filter restricting an events listing to the caller's scope.
     global_admin -> {} (all). location_manager/venue_kj -> scoped. singer -> match none."""

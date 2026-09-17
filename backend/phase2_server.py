@@ -168,10 +168,10 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
 
     @api_router.post("/admin/venues")
     async def create_venue(data: VenueInput, user: dict = Depends(get_current_user)):
-        authz.require_global_admin(user)
         loc = await db.locations.find_one({"id": data.location_id}, {"_id": 0})
         if not loc:
             raise HTTPException(status_code=404, detail="Location not found")
+        authz.require_location_staff(user, data.location_id)
         venue = Venue(**data.model_dump()).to_mongo()
         try:
             await db.venues.insert_one(dict(venue))
@@ -231,10 +231,10 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
 
     @api_router.put("/admin/venues/{venue_id}")
     async def update_venue(venue_id: str, data: VenueInput, user: dict = Depends(get_current_user)):
-        authz.require_global_admin(user)
         venue = await db.venues.find_one({"id": venue_id}, {"_id": 0})
         if not venue:
             raise HTTPException(status_code=404, detail="Venue not found")
+        authz.require_location_staff(user, venue["location_id"])
         upd = {"name": data.name, "address": data.address, "timezone": data.timezone, "updated_at": _iso()}
         await db.venues.update_one({"id": venue_id}, {"$set": upd})
         return {**venue, **upd}

@@ -5,7 +5,6 @@ import { toast } from 'sonner';
 import { Phase2Shell } from '@/components/Phase2Shell';
 import { useAuth } from '@/context/AuthContext';
 import { p2, isGlobalAdmin } from '@/lib/phase2Api';
-
 const VenuesPage = () => {
   const { locationId } = useParams();
   const navigate = useNavigate();
@@ -14,7 +13,7 @@ const VenuesPage = () => {
   const [location, setLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(null);
-  const canManage = isGlobalAdmin(user);
+  const canManage = isGlobalAdmin(user) || user?.role === 'location_manager';
 
   const load = async () => {
     try {
