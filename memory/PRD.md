@@ -275,3 +275,25 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 **Verified:** testing_agent iteration_9 (100% frontend, end-to-end before->after, isolation, duplicate/tampered) + backend phase2_smoke 30/30 + final_e2e 38/38.
 
 **Known pre-existing (out of scope):** `/api/ws` WebSocket console noise on every page (non-blocking).
+
+---
+
+# Venue KJ show-operation console (2026-06) — dev workspace
+
+**Reported gap:** venue_kj had no obvious way to select/run a show, and it wasn't clear they could generate the event QR, award points, or manage the queue.
+
+**Current Phase 1 KJ capabilities (base app):** QR check-in display, live song queue with reorder/complete/current, award points (nightly), rank perks — all gated behind is_admin (global).
+
+**Missing in Phase 2 for venue_kj:** a scoped, discoverable entry point + explicit event selection (the per-event tools already existed in EventManagePage but were buried under Locations→Venues→Events).
+
+**Changes (frontend only; backend authz unchanged):**
+- NEW `pages/phase2/KJConsolePage.jsx` at `/admin/kj`: lists the KJ's authorized events grouped by their assigned venue (Active/Upcoming + past), each with a "Run Show" button. Single active event is marked default but still shown/selectable.
+- `AdminLoginPage.js`: venue_kj now lands on `/admin/kj` (global_admin -> /admin, other staff -> /admin/phase2).
+- `Phase2Shell.jsx`: role-aware header (non-admin staff get "KJ Console" + "Venues" nav instead of the admin-only "Phase 1 Admin").
+- Selecting a show opens the existing per-event workflow (QR → singers+award → queue controls → leaderboard/season), event header clearly shown; everything event-scoped.
+
+**Permission boundaries (unchanged, backend-enforced):** venue_kj is NOT is_admin; scoped to its venue only; can operate any event at its venue; cannot access other locations/venues/events, cannot award in another event, cannot reach the Phase 1 global panel (/admin -> /dashboard), cannot manage global settings/users. Award requires the target to be checked into that event.
+
+**Event selection:** KJ Console shows "Venue: <assigned venue>" + selectable shows; selected event drives QR→check-in→singers→queue→points→perks→leaderboard.
+
+**Verified:** testing_agent iteration_10 (KJ console + run Event A, switch to Event B, scope guards, Phase 1 compat, regression) — 100%. Backend: phase2_smoke 30/30, final_e2e 48/48 (incl. T3b venue-KJ operate-both-events + denied on other venue).
