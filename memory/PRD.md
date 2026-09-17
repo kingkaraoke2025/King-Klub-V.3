@@ -249,3 +249,15 @@ Points/Leaderboard (event + current season). Royal/gold theme preserved; role-ba
 ## Verified (testing_agent iteration_6)
 staff login fix, singer rejection, full L->V->E CRUD, all event tabs, QR-token check-in, singer isolation across events,
 points award + season leaderboard, venue_kj control hiding + backend cross-scope 403, Phase 1 regression. Backend 30/30 smoke.
+
+---
+
+# Bug fix: /admin/qr-checkin QR generation (2026-06) — dev workspace
+
+**Root cause:** The `/admin/qr-checkin` page (`QRCheckInPage.js`) was the LEGACY nightly venue-QR page still calling the retired `GET /api/venue/qr-data` (Phase 2 disabled it -> 403), so it errored with "Failed to load QR code" and never rendered a QR. Not a backend defect.
+
+**Fix (frontend only, smallest change):** Migrated `QRCheckInPage.js` to the existing Phase 2 event-scoped QR — added an event selector, calls `GET /api/admin/events/{id}/qr` (via `p2.eventQR`), renders the returned `/e/checkin/{token}` check-in path. Route `/admin/qr-checkin` widened `adminOnly` -> `staffOnly`. No QR backend changes; all Phase 2 protections (signed/expiring/tamper/scoping/duplicate/auth) preserved.
+
+**Verified (testing_agent iteration_8, 6/6 + regression):** QR renders & regenerates, event switching, singer QR check-in, event scoping (singer only in selected event), duplicate protection, tampered-token rejection, staff access (venue_kj) + singer redirect. Backend smoke still 30/30.
+
+**Known pre-existing (out of scope):** WS `/api/ws` upgrade warnings via ingress; a 429 burst on singer `/dashboard` polling — candidates for a future iteration.
