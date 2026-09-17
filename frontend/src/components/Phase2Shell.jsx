@@ -18,10 +18,23 @@ export const Phase2Shell = ({ title, subtitle, crumbs = [], back, actions, child
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => navigate('/admin')} data-testid="phase2-exit-btn"
-              className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
-              Phase 1 Admin
-            </button>
+            {user?.is_admin ? (
+              <button onClick={() => navigate('/admin')} data-testid="phase2-exit-btn"
+                className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
+                Phase 1 Admin
+              </button>
+            ) : (
+              <>
+                <button onClick={() => navigate('/admin/kj')} data-testid="phase2-kj-console-btn"
+                  className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
+                  KJ Console
+                </button>
+                <button onClick={() => navigate('/admin/phase2')} data-testid="phase2-locations-btn"
+                  className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
+                  Venues
+                </button>
+              </>
+            )}
             <button onClick={() => { logout(); navigate('/admin/login'); }} data-testid="phase2-logout-btn"
               className="text-sm text-white/70 hover:text-gold flex items-center gap-1 px-3 py-1.5 rounded-lg">
               <LogOut className="w-4 h-4" /> Logout

@@ -71,6 +71,19 @@ chk("T3 kj can view leaderboard", requests.get(f"{BASE}/events/{A['id']}/leaderb
 chk("T3 kj CANNOT access OTHER venue's event by id (403)", requests.get(f"{BASE}/admin/events/{OTHER_EV['id']}", headers=H(kj)).status_code == 403)
 chk("T3 kj CANNOT create venue (403, not location staff)", requests.post(f"{BASE}/admin/venues", headers=H(kj), json={"location_id": LOC["id"], "name": "KJ Venue"}).status_code == 403)
 
+# ===== TEST 3b — VENUE KJ can OPERATE a show on both events at their venue =====
+s2tok = login("singer2@kingkaraoke2025.com", "Singer!2026")
+for lbl, EV in [("A", A), ("B", B)]:
+    # ensure a participant exists in this event (singer2 checks in via that event's QR)
+    _qr = requests.get(f"{BASE}/admin/events/{EV['id']}/qr", headers=H(kj)).json()
+    requests.post(f"{BASE}/e/checkin/{_qr['token']}", headers=H(s2tok))
+    chk(f"T3b kj generate QR (Event {lbl})", "token" in _qr)
+    chk(f"T3b kj award points to a checked-in singer (Event {lbl})", requests.post(f"{BASE}/events/{EV['id']}/award-points", headers=H(kj), json={"user_id": "dev-singer-0002", "points": 5, "action_id": "sing_song"}).ok)
+    chk(f"T3b kj view queue (Event {lbl})", requests.get(f"{BASE}/events/{EV['id']}/queue", headers=H(kj)).status_code == 200)
+    chk(f"T3b kj view leaderboard (Event {lbl})", requests.get(f"{BASE}/events/{EV['id']}/leaderboard", headers=H(kj)).ok)
+chk("T3b kj CANNOT award in OTHER venue's event (403)", requests.post(f"{BASE}/events/{OTHER_EV['id']}/award-points", headers=H(kj), json={"user_id": "dev-singer-0001", "points": 5}).status_code == 403)
+chk("T3b kj CANNOT generate QR for OTHER venue's event (403)", requests.get(f"{BASE}/admin/events/{OTHER_EV['id']}/qr", headers=H(kj)).status_code == 403)
+
 # ===== TEST 4 — SINGER =====
 chk("T4 singer denied /admin/events (403)", requests.get(f"{BASE}/admin/events", headers=H(singer)).status_code == 403)
 chk("T4 singer denied award-points (403)", requests.post(f"{BASE}/events/{A['id']}/award-points", headers=H(singer), json={"user_id": "dev-singer-0001", "points": 5}).status_code == 403)

@@ -34,7 +34,10 @@ const AdminLoginPage = () => {
       }
       
       toast.success('Welcome back!');
-      navigate(user.is_admin ? '/admin' : '/admin/phase2');
+      // global_admin -> Phase 1 panel; venue_kj -> KJ Console; other staff -> Phase 2 admin
+      if (user.is_admin) navigate('/admin');
+      else if (user.role === 'venue_kj') navigate('/admin/kj');
+      else navigate('/admin/phase2');
     } catch (error) {
       const message = error.response?.data?.detail || 'Login failed. Please try again.';
       setError(message);

@@ -39,6 +39,7 @@ import LocationsPage from "@/pages/phase2/LocationsPage";
 import VenuesPage from "@/pages/phase2/VenuesPage";
 import EventsPage from "@/pages/phase2/EventsPage";
 import EventManagePage from "@/pages/phase2/EventManagePage";
+import KJConsolePage from "@/pages/phase2/KJConsolePage";
 import EventCheckInPage from "@/pages/EventCheckInPage";
 
 const STAFF_ROLES = ["global_admin", "location_manager", "venue_kj"];
@@ -175,6 +176,7 @@ const AppContent = () => {
         <Route path="/e/checkin/:token" element={<EventCheckInPage />} />
         <Route path="/how-to-earn" element={<HowToEarnPage />} />
         <Route path="/admin/phase2" element={<ProtectedRoute staffOnly><LocationsPage /></ProtectedRoute>} />
+        <Route path="/admin/kj" element={<ProtectedRoute staffOnly><KJConsolePage /></ProtectedRoute>} />
         <Route path="/admin/phase2/locations/:locationId" element={<ProtectedRoute staffOnly><VenuesPage /></ProtectedRoute>} />
         <Route path="/admin/phase2/venues/:venueId" element={<ProtectedRoute staffOnly><EventsPage /></ProtectedRoute>} />
         <Route path="/admin/phase2/events/:eventId" element={<ProtectedRoute staffOnly><EventManagePage /></ProtectedRoute>} />
