@@ -166,7 +166,7 @@ const AppContent = () => {
         <Route
           path="/admin/qr-checkin"
           element={
-            <ProtectedRoute adminOnly>
+            <ProtectedRoute staffOnly>
               <QRCheckInPage />
             </ProtectedRoute>
           }
