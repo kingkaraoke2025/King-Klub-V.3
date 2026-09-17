@@ -514,6 +514,26 @@ async def update_title_preference(data: UpdateTitlePreferenceRequest, user: dict
 
 
 # ==================== SONG QUEUE ENDPOINTS ====================
+async def resolve_active_event_checkin(user):
+    """Phase 2-aware queue eligibility.
+
+    Returns a legacy-compatible check-in dict for the user's CURRENT active-event
+    check-in, or None. Recognizes event-scoped Phase 2 participation
+    (event_participation.status == 'checked_in') for an event whose status == 'active'.
+    Most recently checked-in active event wins. Does NOT fall back to the retired
+    nightly `checkins` collection. `date` is set to the event id so per-event song
+    windows and perk usage stay isolated between events (Event A vs Event B).
+    """
+    parts = await db.event_participation.find(
+        {"user_id": user["id"], "status": "checked_in"}, {"_id": 0}
+    ).sort("checked_in_at", -1).to_list(50)
+    for p in parts:
+        ev = await db.events.find_one({"id": p["event_id"], "status": "active"}, {"_id": 0})
+        if ev:
+            return {"timestamp": p.get("checked_in_at"), "event_id": p["event_id"], "date": p["event_id"]}
+    return None
+
+
 @api_router.get("/queue")
 async def get_queue():
     queue = await db.queue.find(
@@ -539,16 +559,15 @@ async def add_to_queue(data: AddSongRequest, user: dict = Depends(get_current_us
     
     songs_this_window = 0
     minutes_until_reset = 30
+    active_event_id = None
     
     # Only check for QR check-in and song limits if NOT admin
     if not is_admin:
-        checkin_today = await db.checkins.find_one({
-            "user_id": user["id"],
-            "date": effective_date
-        })
+        checkin_today = await resolve_active_event_checkin(user)
+        active_event_id = checkin_today["event_id"] if checkin_today else None
         
         if not checkin_today:
-            raise HTTPException(status_code=400, detail="Please check in with the QR code first to add songs to the queue")
+            raise HTTPException(status_code=400, detail="Please check in to the active event with the QR code first to add songs to the queue")
         
         # Calculate current 30-minute window since check-in
         checkin_time = datetime.fromisoformat(checkin_today["timestamp"].replace('Z', '+00:00'))
@@ -560,9 +579,10 @@ async def add_to_queue(data: AddSongRequest, user: dict = Depends(get_current_us
         window_start = checkin_time + timedelta(minutes=current_window * 30)
         window_end = window_start + timedelta(minutes=30)
         
-        # Count songs added in the current 30-minute window
+        # Count songs added in the current 30-minute window (scoped to the active event)
         songs_this_window = await db.queue.count_documents({
             "user_id": user["id"],
+            "event_id": active_event_id,
             "created_at": {
                 "$gte": window_start.isoformat(),
                 "$lt": window_end.isoformat()
@@ -594,6 +614,7 @@ async def add_to_queue(data: AddSongRequest, user: dict = Depends(get_current_us
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
         "user_name": user["display_name"],
+        "event_id": active_event_id,
         "song_title": data.song_title,
         "artist": data.artist,
         "message_to_admin": message,
@@ -668,10 +689,7 @@ async def get_my_queue_status(user: dict = Depends(get_current_user)):
     else:
         effective_date = now.strftime("%Y-%m-%d")
     
-    checkin_today = await db.checkins.find_one({
-        "user_id": user["id"],
-        "date": effective_date
-    })
+    checkin_today = await resolve_active_event_checkin(user)
     
     if not checkin_today:
         return {
@@ -693,9 +711,10 @@ async def get_my_queue_status(user: dict = Depends(get_current_user)):
     window_end = window_start + timedelta(minutes=30)
     minutes_until_reset = 30 - (minutes_since_checkin % 30)
     
-    # Count songs added in current window
+    # Count songs added in current window (scoped to the active event)
     songs_this_window = await db.queue.count_documents({
         "user_id": user["id"],
+        "event_id": checkin_today["event_id"],
         "created_at": {
             "$gte": window_start.isoformat(),
             "$lt": window_end.isoformat()
@@ -792,10 +811,7 @@ async def get_perk_status(user: dict = Depends(get_current_user)):
     else:
         effective_date = now.strftime("%Y-%m-%d")
     
-    checkin_today = await db.checkins.find_one({
-        "user_id": user["id"],
-        "date": effective_date
-    })
+    checkin_today = await resolve_active_event_checkin(user)
     
     if not checkin_today:
         return {
@@ -809,7 +825,7 @@ async def get_perk_status(user: dict = Depends(get_current_user)):
     # Check if perk already used today
     perk_used = await db.perk_usage.find_one({
         "user_id": user["id"],
-        "date": effective_date
+        "date": checkin_today["date"]
     })
     
     if perk_used:
@@ -864,10 +880,7 @@ async def use_rank_perk(user: dict = Depends(get_current_user)):
     else:
         effective_date = now.strftime("%Y-%m-%d")
     
-    checkin_today = await db.checkins.find_one({
-        "user_id": user["id"],
-        "date": effective_date
-    })
+    checkin_today = await resolve_active_event_checkin(user)
     
     if not checkin_today:
         raise HTTPException(status_code=400, detail="You must check in with the QR code first")
@@ -875,7 +888,7 @@ async def use_rank_perk(user: dict = Depends(get_current_user)):
     # Check if perk already used
     perk_used = await db.perk_usage.find_one({
         "user_id": user["id"],
-        "date": effective_date
+        "date": checkin_today["date"]
     })
     
     if perk_used:
@@ -930,7 +943,7 @@ async def use_rank_perk(user: dict = Depends(get_current_user)):
     await db.perk_usage.insert_one({
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
-        "date": effective_date,
+        "date": checkin_today["date"],
         "rank": rank_name,
         "perk_type": perk["type"],
         "old_position": old_position,
