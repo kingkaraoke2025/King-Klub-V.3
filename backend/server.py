@@ -27,6 +27,12 @@ JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
+# ==================== PHASE 2 FEATURE FLAGS ====================
+# Legacy nightly QR/check-in/leaderboard are RETIRED by Phase 2 config (kept in code
+# for rollback). Flip to true in .env to re-enable the legacy nightly system.
+LEGACY_NIGHTLY_ENABLED = os.environ.get('LEGACY_NIGHTLY_ENABLED', 'false').lower() == 'true'
+LEGACY_QR_ENABLED = os.environ.get('LEGACY_QR_ENABLED', 'false').lower() == 'true'
+
 # Security
 security = HTTPBearer()
 
@@ -34,6 +40,7 @@ security = HTTPBearer()
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self.event_rooms: Dict[str, List[WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -47,7 +54,24 @@ class ConnectionManager:
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except:
+            except Exception:
+                pass
+
+    # ---- Phase 2: per-event rooms (isolated broadcast) ----
+    async def connect_event(self, event_id: str, websocket: WebSocket):
+        await websocket.accept()
+        self.event_rooms.setdefault(event_id, []).append(websocket)
+
+    def disconnect_event(self, event_id: str, websocket: WebSocket):
+        room = self.event_rooms.get(event_id)
+        if room and websocket in room:
+            room.remove(websocket)
+
+    async def broadcast_event(self, event_id: str, message: dict):
+        for connection in list(self.event_rooms.get(event_id, [])):
+            try:
+                await connection.send_json(message)
+            except Exception:
                 pass
 
 manager = ConnectionManager()
@@ -1275,6 +1299,8 @@ async def get_leaderboard():
 @api_router.get("/leaderboard/tonight")
 async def get_tonight_leaderboard():
     """Get tonight's leaderboard (points earned tonight only)"""
+    if not LEGACY_NIGHTLY_ENABLED:
+        raise HTTPException(status_code=403, detail="Legacy nightly leaderboard is retired. Use /api/seasons/current/leaderboard or an event leaderboard.")
     # Check if there's an active QR session for today
     today = get_venue_date()
     settings = await db.settings.find_one({"key": "current_night"})
@@ -2365,6 +2391,8 @@ def get_venue_date():
 @api_router.get("/venue/qr-data")
 async def get_venue_qr_data(admin: dict = Depends(get_admin_user)):
     """Get QR code data for venue check-in (admin only)"""
+    if not (LEGACY_QR_ENABLED and LEGACY_NIGHTLY_ENABLED):
+        raise HTTPException(status_code=403, detail="Legacy venue QR is retired. Use event QR at /api/admin/events/{event_id}/qr.")
     today = get_venue_date()
     daily_code = hashlib.sha256(f"{VENUE_SECRET}-{today}".encode()).hexdigest()[:12]
     
@@ -2456,6 +2484,8 @@ async def get_venue_qr_data(admin: dict = Depends(get_admin_user)):
 @api_router.post("/checkin/{venue_code}")
 async def perform_checkin(venue_code: str, user: dict = Depends(get_current_user)):
     """Perform a venue check-in via QR code"""
+    if not (LEGACY_QR_ENABLED and LEGACY_NIGHTLY_ENABLED):
+        raise HTTPException(status_code=403, detail="Legacy nightly check-in is retired. Use event check-in at /api/e/checkin/{token}.")
     today = get_venue_date()
     expected_code = hashlib.sha256(f"{VENUE_SECRET}-{today}".encode()).hexdigest()[:12]
     
@@ -2613,6 +2643,15 @@ async def get_today_checkins(admin: dict = Depends(get_admin_user)):
 @api_router.get("/")
 async def root():
     return {"message": "King Klub API", "version": "1.0.0"}
+
+# ==================== PHASE 2 INTEGRATION ====================
+# Mount Phase 2 (locations/venues/events, event QR + check-in, singer lists,
+# event queue/perks, seasons/points, per-event WS, cron) onto the base app.
+import phase2_server  # noqa: E402
+phase2_server.register_phase2(
+    app, api_router, db, manager, get_current_user, get_admin_user,
+    get_rank, get_user_rank_name, RANK_PERKS,
+)
 
 # Include router
 app.include_router(api_router)

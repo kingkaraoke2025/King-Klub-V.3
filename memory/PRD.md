@@ -181,3 +181,38 @@ A full-stack web app for King Karaoke featuring:
 ## Test Credentials
 - **Admin**: admin@kingkaraoke2025.com / admin123
 - **User**: royaltest@example.com / password123
+
+---
+
+# Phase 2 Controlled Integration — Development Workspace (2026-06)
+
+**Status: Integrated & verified in isolated dev workspace. NOT deployed.**
+
+## What this workspace is
+Isolated development/preview copy combining the base King Klub app (from `King-Klub-V.3-Full`)
+with the Phase 2 overlay modules (from `King-Klub-V.3`). Fresh local MongoDB
+(`king_klub_phase2_dev`). The live King Klub app, its production DB, and secrets were NOT touched.
+
+## Files added
+- `backend/roles.py` — Phase 2 role model (DB-based resolvers: global_admin/location_manager/venue_kj/singer).
+- `backend/phase2_server.py` — integration layer: locations/venues/events admin, event QR + `/api/e/checkin/{token}`,
+  singer-list, mounts event-queue/perk + season/points routers, per-event WS auth, cron season-reset, season startup.
+- `backend/authz.py`, `models_phase2.py`, `phase2_events.py`, `phase2_seasons.py`, `migrations/0001-0008` — from Phase 2 overlay.
+- `backend/seed_dev.py`, `backend/phase2_smoke.py` — dev seed + e2e smoke test.
+- `backend/.env`, `frontend/.env` — dev-safe values, fresh secrets (git-ignored).
+
+## Files modified
+- `backend/server.py` — additive only: ConnectionManager per-event rooms + `broadcast_event`; Phase 2 feature flags;
+  403 gates on legacy `/venue/qr-data`, `/checkin/{code}`, `/leaderboard/tonight`; `register_phase2(...)` before router include.
+  No legacy logic rewritten.
+
+## Verified (backend e2e, 30 checks via phase2_smoke.py)
+auth; role authorization; location/venue/event creation; event QR gen; `/e/checkin/{token}` (+dup block +tamper reject);
+singer-list isolation (E1↔E2); event points + isolated event/season leaderboards; season current/leaderboard;
+event queue + perks; legacy nightly retired (403); singer denied staff endpoints; venue_kj scope isolation
+(cannot access another venue's event by changing id); cron secret enforcement. Frontend (Phase 1 UI) compiles & loads.
+
+## Backlog / next (pending approval)
+- P1: Optional admin UI screens for locations/venues/events/event-QR (Phase 2 was backend-only; current UI is Phase 1).
+- P1: Apply data-backfill migrations 0003/0004 with `--execute` if legacy data is ever imported (currently dry-run, DB is fresh).
+- P0 (gated): Production cutover planning — do NOT run until explicitly approved.
