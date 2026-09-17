@@ -35,9 +35,16 @@ import AdminLoginPage from "@/pages/AdminLoginPage";
 import CheckInPage from "@/pages/CheckInPage";
 import QRCheckInPage from "@/pages/QRCheckInPage";
 import HowToEarnPage from "@/pages/HowToEarnPage";
+import LocationsPage from "@/pages/phase2/LocationsPage";
+import VenuesPage from "@/pages/phase2/VenuesPage";
+import EventsPage from "@/pages/phase2/EventsPage";
+import EventManagePage from "@/pages/phase2/EventManagePage";
+import EventCheckInPage from "@/pages/EventCheckInPage";
+
+const STAFF_ROLES = ["global_admin", "location_manager", "venue_kj"];
 
 // Protected Route Component
-const ProtectedRoute = ({ children, adminOnly = false }) => {
+const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false }) => {
   const { user, loading } = useAuth();
   
   if (loading) {
@@ -51,7 +58,11 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  
+
+  const isStaffUser = user.is_admin || STAFF_ROLES.includes(user.role);
+  if (staffOnly && !isStaffUser) {
+    return <Navigate to="/dashboard" replace />;
+  }
   if (adminOnly && !user.is_admin) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -161,7 +172,12 @@ const AppContent = () => {
           }
         />
         <Route path="/checkin/:venueCode" element={<CheckInPage />} />
+        <Route path="/e/checkin/:token" element={<EventCheckInPage />} />
         <Route path="/how-to-earn" element={<HowToEarnPage />} />
+        <Route path="/admin/phase2" element={<ProtectedRoute staffOnly><LocationsPage /></ProtectedRoute>} />
+        <Route path="/admin/phase2/locations/:locationId" element={<ProtectedRoute staffOnly><VenuesPage /></ProtectedRoute>} />
+        <Route path="/admin/phase2/venues/:venueId" element={<ProtectedRoute staffOnly><EventsPage /></ProtectedRoute>} />
+        <Route path="/admin/phase2/events/:eventId" element={<ProtectedRoute staffOnly><EventManagePage /></ProtectedRoute>} />
       </Routes>
       
       {/* Global Vote Popup */}

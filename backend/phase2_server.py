@@ -29,6 +29,7 @@ import jwt
 from fastapi import (APIRouter, Depends, HTTPException, Query, Request, WebSocket,
                      WebSocketDisconnect)
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError
 
 import authz
 import phase2_events
@@ -143,7 +144,10 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
     async def create_location(data: LocationInput, user: dict = Depends(get_current_user)):
         authz.require_global_admin(user)
         loc = Location(**data.model_dump()).to_mongo()
-        await db.locations.insert_one(dict(loc))
+        try:
+            await db.locations.insert_one(dict(loc))
+        except DuplicateKeyError:
+            raise HTTPException(status_code=400, detail="A location with this name already exists")
         loc.pop("_id", None)
         return loc
 
@@ -169,7 +173,10 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         if not loc:
             raise HTTPException(status_code=404, detail="Location not found")
         venue = Venue(**data.model_dump()).to_mongo()
-        await db.venues.insert_one(dict(venue))
+        try:
+            await db.venues.insert_one(dict(venue))
+        except DuplicateKeyError:
+            raise HTTPException(status_code=400, detail="A venue with this name already exists in this location")
         venue.pop("_id", None)
         return venue
 
@@ -192,7 +199,10 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         ev = Event(venue_id=venue["id"], location_id=venue["location_id"], name=data.name,
                    event_date=data.event_date, status=data.status,
                    starts_at=data.starts_at, ends_at=data.ends_at).to_mongo()
-        await db.events.insert_one(dict(ev))
+        try:
+            await db.events.insert_one(dict(ev))
+        except DuplicateKeyError:
+            raise HTTPException(status_code=400, detail="An event with this name already exists at this venue")
         ev.pop("_id", None)
         return ev
 
@@ -208,6 +218,35 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         authz.require_event_staff(user, ev)
         await db.events.update_one({"id": event_id}, {"$set": {"status": data.status, "updated_at": _iso()}})
         return {"message": "Event status updated", "event_id": event_id, "status": data.status}
+
+    @api_router.put("/admin/locations/{location_id}")
+    async def update_location(location_id: str, data: LocationInput, user: dict = Depends(get_current_user)):
+        authz.require_global_admin(user)
+        loc = await db.locations.find_one({"id": location_id}, {"_id": 0})
+        if not loc:
+            raise HTTPException(status_code=404, detail="Location not found")
+        upd = {**data.model_dump(), "updated_at": _iso()}
+        await db.locations.update_one({"id": location_id}, {"$set": upd})
+        return {**loc, **upd}
+
+    @api_router.put("/admin/venues/{venue_id}")
+    async def update_venue(venue_id: str, data: VenueInput, user: dict = Depends(get_current_user)):
+        authz.require_global_admin(user)
+        venue = await db.venues.find_one({"id": venue_id}, {"_id": 0})
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        upd = {"name": data.name, "address": data.address, "timezone": data.timezone, "updated_at": _iso()}
+        await db.venues.update_one({"id": venue_id}, {"$set": upd})
+        return {**venue, **upd}
+
+    @api_router.put("/admin/events/{event_id}")
+    async def update_event(event_id: str, data: EventInput, user: dict = Depends(get_current_user)):
+        ev = await _get_event(event_id)
+        authz.require_event_staff(user, ev)
+        upd = {"name": data.name, "event_date": data.event_date, "status": data.status,
+               "starts_at": data.starts_at, "ends_at": data.ends_at, "updated_at": _iso()}
+        await db.events.update_one({"id": event_id}, {"$set": upd})
+        return {**ev, **upd}
 
     # -------------------- EVENT QR (staff, scope-checked) --------------------
     @api_router.get("/admin/events/{event_id}/qr")

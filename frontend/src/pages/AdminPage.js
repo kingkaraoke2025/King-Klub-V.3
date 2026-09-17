@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   Shield, Users, Mic2, CheckCircle, XCircle, Play, 
@@ -148,6 +149,7 @@ const SortableQueueItem = ({ item, pendingQueueLength, onSetCurrent, onRemove, o
 
 const AdminPage = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [queue, setQueue] = useState([]);
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
@@ -499,15 +501,25 @@ const AdminPage = () => {
             </div>
             <p className="text-white/60">Manage queue, users, and award points</p>
           </div>
-          <Button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            data-testid="refresh-btn"
-            className="bg-white/5 border border-white/20 hover:bg-white/10 text-white"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => navigate('/admin/phase2')}
+              data-testid="open-phase2-admin-btn"
+              className="bg-gold text-black font-semibold hover:brightness-110"
+            >
+              <Crown className="w-4 h-4 mr-2" />
+              Phase 2 Admin
+            </Button>
+            <Button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              data-testid="refresh-btn"
+              className="bg-white/5 border border-white/20 hover:bg-white/10 text-white"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         </motion.div>
 
         {/* Stats Overview */}

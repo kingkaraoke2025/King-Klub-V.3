@@ -24,15 +24,17 @@ const AdminLoginPage = () => {
     try {
       const user = await login(email, password);
       
-      // Check if user is admin
-      if (!user.is_admin) {
-        setError('Access denied. Admin privileges required.');
+      // Staff = global_admin / location_manager / venue_kj (role from DB) or legacy is_admin
+      const STAFF_ROLES = ['global_admin', 'location_manager', 'venue_kj'];
+      const isStaff = user.is_admin || STAFF_ROLES.includes(user.role);
+      if (!isStaff) {
+        setError('Access denied. Staff privileges required.');
         setLoading(false);
         return;
       }
       
-      toast.success('Welcome back, Admin!');
-      navigate('/admin');
+      toast.success('Welcome back!');
+      navigate(user.is_admin ? '/admin' : '/admin/phase2');
     } catch (error) {
       const message = error.response?.data?.detail || 'Login failed. Please try again.';
       setError(message);

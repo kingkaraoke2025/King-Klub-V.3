@@ -1,5 +1,6 @@
 """Phase 2 end-to-end backend smoke test (isolated dev DB)."""
 import os
+import uuid
 from pathlib import Path
 
 import bcrypt
@@ -10,6 +11,7 @@ from pymongo import MongoClient
 load_dotenv(Path(__file__).resolve().parent / ".env")
 BASE = "http://localhost:8001/api"
 db = MongoClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]
+RUN = uuid.uuid4().hex[:6]  # unique per run so re-runs don't collide on unique slugs
 
 passed, failed = [], []
 
@@ -35,13 +37,22 @@ s1 = login("singer1@kingkaraoke2025.com", "Singer!2026")
 s2 = login("singer2@kingkaraoke2025.com", "Singer!2026")
 check("singer logins", bool(s1) and bool(s2))
 
+
+def season_pts(uid):
+    lb = requests.get(f"{BASE}/seasons/current/leaderboard", headers=H(admin)).json()
+    row = next((r for r in lb["leaderboard"] if r["user_id"] == uid), None)
+    return row["season_points"] if row else 0
+
+
+s1_season_before = season_pts("dev-singer-0001")
+
 # ---- Locations / Venues / Events ----
-L1 = requests.post(f"{BASE}/admin/locations", headers=H(admin), json={"name": "Downtown", "city": "Chicago", "state": "IL"}).json()
-L2 = requests.post(f"{BASE}/admin/locations", headers=H(admin), json={"name": "Riverside", "city": "St. Louis", "state": "MO"}).json()
-V1 = requests.post(f"{BASE}/admin/venues", headers=H(admin), json={"location_id": L1["id"], "name": "Royal Stage"}).json()
-V2 = requests.post(f"{BASE}/admin/venues", headers=H(admin), json={"location_id": L2["id"], "name": "Crown Lounge"}).json()
-E1 = requests.post(f"{BASE}/admin/events", headers=H(admin), json={"venue_id": V1["id"], "name": "Friday Night", "event_date": "2026-06-12", "status": "active"}).json()
-E2 = requests.post(f"{BASE}/admin/events", headers=H(admin), json={"venue_id": V2["id"], "name": "Saturday Night", "event_date": "2026-06-13", "status": "active"}).json()
+L1 = requests.post(f"{BASE}/admin/locations", headers=H(admin), json={"name": f"Downtown {RUN}", "city": "Chicago", "state": "IL"}).json()
+L2 = requests.post(f"{BASE}/admin/locations", headers=H(admin), json={"name": f"Riverside {RUN}", "city": "St. Louis", "state": "MO"}).json()
+V1 = requests.post(f"{BASE}/admin/venues", headers=H(admin), json={"location_id": L1["id"], "name": f"Royal Stage {RUN}"}).json()
+V2 = requests.post(f"{BASE}/admin/venues", headers=H(admin), json={"location_id": L2["id"], "name": f"Crown Lounge {RUN}"}).json()
+E1 = requests.post(f"{BASE}/admin/events", headers=H(admin), json={"venue_id": V1["id"], "name": f"Friday Night {RUN}", "event_date": "2026-06-12", "status": "active"}).json()
+E2 = requests.post(f"{BASE}/admin/events", headers=H(admin), json={"venue_id": V2["id"], "name": f"Saturday Night {RUN}", "event_date": "2026-06-13", "status": "active"}).json()
 check("create location/venue/event", all("id" in x for x in [L1, L2, V1, V2, E1, E2]), [L1, V1, E1])
 check("event has denormalized location_id", E1.get("location_id") == L1["id"])
 
@@ -82,9 +93,8 @@ check("E2 leaderboard does NOT include singer1", all(r["user_id"] != "dev-singer
 # ---- Season ----
 cur = requests.get(f"{BASE}/seasons/current", headers=H(s1)).json()
 check("season current returned", "season" in cur and cur["season"].get("is_current"))
-slb = requests.get(f"{BASE}/seasons/current/leaderboard", headers=H(admin)).json()
-srow = next((r for r in slb["leaderboard"] if r["user_id"] == "dev-singer-0001"), None)
-check("season leaderboard aggregates singer1 (10 checkin + 50)", srow and srow["season_points"] == 60, slb)
+s1_season_after = season_pts("dev-singer-0001")
+check("season leaderboard aggregates singer1 (+10 checkin +50 award = +60 this run)", s1_season_after - s1_season_before == 60, (s1_season_before, s1_season_after))
 
 # ---- Event queue + perks ----
 addq = requests.post(f"{BASE}/events/{E1['id']}/queue", headers=H(s1),

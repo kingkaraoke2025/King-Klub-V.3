@@ -438,6 +438,8 @@ async def login(data: UserLogin):
             "next_rank": next_rank,
             "badges": user["badges"],
             "is_admin": user.get("is_admin", False),
+            "role": user.get("role") or ("global_admin" if user.get("is_admin") else "singer"),
+            "role_scope": user.get("role_scope") or {"location_ids": [], "venue_ids": []},
             "created_at": user["created_at"]
         }
     }
@@ -458,6 +460,8 @@ async def get_me(user: dict = Depends(get_current_user)):
         "next_rank": next_rank,
         "badges": user["badges"],
         "is_admin": user.get("is_admin", False),
+        "role": user.get("role") or ("global_admin" if user.get("is_admin") else "singer"),
+        "role_scope": user.get("role_scope") or {"location_ids": [], "venue_ids": []},
         "created_at": user["created_at"]
     }
 
