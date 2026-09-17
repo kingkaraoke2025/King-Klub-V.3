@@ -1,9 +1,0 @@
-crons:
-  - name: season-reset-check
-    description: "Daily King Klub season boundary check; starts the new annual season on/after Jan 2 (idempotent)"
-    cron: "0 3 * * *"
-    timezone: "America/Chicago"
-    endpoint: "{{BASE_URL}}/api/cron/season-reset"
-    method: POST
-    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
-    enabled: true

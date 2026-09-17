@@ -1,48 +1,84 @@
-﻿# Dependencies
-node_modules/
-**/node_modules/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Environment and secrets
-.env
-.env.*
-*.env
-*.env.*
+# IDE and editors
+.idea/
+.vscode/
+
+# Dependencies
+node_modules/
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Testing
+/coverage
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Production builds
+/build
+dist/
+
+# Credentials (never commit these)
 *token.json*
 *credentials.json*
+
+# Logs and debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dump.rdb
+
+# System files
+.DS_Store
 *.pem
 
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.so
-.venv/
-venv/
+.Python
 env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
 .mypy_cache/
 .pytest_cache/
 
-# Build/output
-dist/
-build/
-.next/
-out/
-coverage/
-*.tsbuildinfo
+# Byte-compiled / optimized / DLL files
+*.pyc
 
-# Caches
+# Local environment overrides only (NOT the main .env files)
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build caches
 .cache/
-.ruff_cache/
-**/.ruff_cache/
 
-# IDE
-.vscode/
-.idea/
+# Mobile development
+android-sdk/
 
-# OS
-.DS_Store
-
-# Local test reports
+# Test reports (local only)
 test_reports/
-
-# Emergent metadata
-.emergent/
+.env
+.env.*
+*.env
+credentials.json
+*.key
+.credentials
+frontend/node_modules/.cache/default-development/0.pack
