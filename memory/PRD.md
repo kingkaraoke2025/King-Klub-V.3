@@ -297,3 +297,26 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 **Event selection:** KJ Console shows "Venue: <assigned venue>" + selectable shows; selected event drives QR→check-in→singers→queue→points→perks→leaderboard.
 
 **Verified:** testing_agent iteration_10 (KJ console + run Event A, switch to Event B, scope guards, Phase 1 compat, regression) — 100%. Backend: phase2_smoke 30/30, final_e2e 48/48 (incl. T3b venue-KJ operate-both-events + denied on other venue).
+
+
+---
+
+## Changelog — 2026-06-18 (Venue KJ: Full Show-Operation + Event-Scoped Battles)
+
+**Context:** Isolated Phase 2 DEV env only (local Mongo `king_klub_phase2_dev`). NO production access. Preview URL is served at the job's GUID domain; `frontend/.env REACT_APP_BACKEND_URL` was corrected to the current preview origin (the old `king-v3-staging` value caused cross-origin CORS login failures).
+
+### Delivered
+- **KJ show-operation console** (`frontend/src/pages/phase2/EventManagePage.jsx`, opened via KJ Console → Run Show): full Phase-1 parity for the SELECTED event — persistent context bar (Venue · Show · Status), QR generate/regenerate/copy, Singers list, Queue with dnd-kit drag-reorder + up/down + set-current + Now-Performing card + complete + remove + singer messages + perk-protected lock, structured point awards (Phase-1 POINT_ACTIONS one-tap + custom amount), event & season leaderboards.
+- **NEW event-scoped Battles module** (`backend/phase2_battles.py`, mounted via `phase2_server.register_phase2` with `CHALLENGE_TYPES`): `event_challenges` + `event_challenge_votes` collections. Endpoints under `/api/events/{event_id}/battles*` — list/battle-types (require_event_view), create/open-voting/close-voting/finalize/pick-winner/cancel (require_event_staff), vote (checked-in participant, one vote, contestants excluded). Winner/participant points via idempotent award ledger → EVENT + SEASON only (never lifetime).
+- **Points attribution + audit**: manual awards go to event_points + season_participation (not legacy `users.points`); `awarded_by` (KJ id) added to `season_accomplishments` for traceability.
+
+### Security (all backend-enforced via `authz.require_event_staff`, DB role/scope — not JWT, not is_admin)
+- venue_kj can operate ONLY events in `role_scope.venue_ids`; another venue's event → 403.
+- Singers → 403 on all KJ-only ops. All battle/queue/point rows carry event_id; no cross-event leakage.
+
+### Testing
+- Backend: `backend/test_kj_phase2.py` — **24/24 pass** (battles + points isolation, 403 boundaries, lifetime-untouched).
+- Frontend: `test_reports/iteration_11.json` — **9/9 flows pass** incl. isolation (KJ blocked from Other Event: "Not authorized", QR 403). No bugs.
+
+### Known non-blocking item (deferred)
+- Benign WebSocket `/api/ws` console noise on Phase 2 pages (legacy Phase 1 hook). Cosmetic only.
