@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Mic2, Users, Gift, Swords, Trophy, QrCode, ChevronUp, ChevronDown, Play, XCircle,
@@ -82,6 +82,7 @@ const SortableQueueItem = ({ item, pendingLen, onSetCurrent, onRemove, onMoveUp,
 
 const EventManagePage = () => {
   const { eventId } = useParams();
+  const navigate = useNavigate();
   const [event, setEvent] = useState(null);
   const [venueName, setVenueName] = useState('');
   const [queue, setQueue] = useState([]);
@@ -103,8 +104,12 @@ const EventManagePage = () => {
   );
 
   const loadEvent = useCallback(async () => {
-    try { setEvent(await p2.event(eventId)); } catch (e) { toast.error(e.response?.data?.detail || 'Failed to load event'); }
-  }, [eventId]);
+    try { setEvent(await p2.event(eventId)); }
+    catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to load event');
+      if (e.response?.status === 403) navigate('/admin/kj');
+    }
+  }, [eventId, navigate]);
   const loadQueue = useCallback(async () => { try { setQueue(await p2.eventQueue(eventId)); } catch (e) { toast.error(e.response?.data?.detail || 'Failed to load queue'); } }, [eventId]);
   const loadSingers = useCallback(async () => { try { setSingers((await p2.singerList(eventId)).singers); } catch (e) {} }, [eventId]);
   const loadBattles = useCallback(async () => { try { setBattles(await p2.battles(eventId)); } catch (e) {} }, [eventId]);

@@ -343,3 +343,14 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 
 ### Known minor (pre-existing, not introduced here)
 - `/api/auth/me` can return 429 during very rapid page navigation (existing rate limiter). Non-blocking; cosmetic loading flashes only.
+
+---
+
+## Changelog — 2026-06-18 (KJ console rebuilt to old Admin/KJ panel parity)
+- Rebuilt `frontend/src/pages/phase2/EventManagePage.jsx` to mirror the old Phase-1 Admin/KJ panel: motion header + selected-event context bar, 4 stat cards, shadcn Tabs (Queue | Singers | Award Points | Battles | Leaderboard | QR), classic DnD `SortableQueueItem` (drag handle, position, message, perk lock, move up/down, set-current, remove), Now-Performing card with Complete.
+- Dedicated **Award Points** tab (singer search + select list + Point Actions Reference) and award dialog (Phase-1 one-tap actions + custom amount) → event-scoped `POST /events/{id}/award-points` (event+season, never lifetime; records awarded_by).
+- Event-scoped **Battles** tab (create from checked-in singers, open/close voting, finalize, pick winner) → `phase2_battles`.
+- On 403 for an out-of-scope event, KJ is redirected back to `/admin/kj`.
+- Re-fixed `frontend/.env REACT_APP_BACKEND_URL` (had reverted to stale king-v3-staging → CORS login failure) to the current preview origin.
+- Backend unchanged & re-verified: test_staff_auth 29/29, test_kj_phase2 24/24, focused_verify 22/22. Frontend E2E iteration_13.json 8/8 pass, no bugs.
+- Restored seeded singers (singer1/2, dakota) to role=singer after earlier test drift corrupted singer1 to venue_kj.
