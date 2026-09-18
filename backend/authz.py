@@ -25,14 +25,33 @@ def _scope(user: dict) -> dict:
 
 
 def is_staff(user: dict) -> bool:
-    return roles.resolve_role(user) in roles.STAFF_ROLES
+    return roles.resolve_role(user) in roles.STAFF_ROLES and staff_authorized(user)
 
 
-def staff_can_access_event(user: dict, event: dict) -> bool:
-    """True iff a STAFF user is in scope for this event. Singers are never staff -> False."""
+def staff_authorized(user: dict) -> bool:
+    """True iff the user currently holds ACTIVE staff authorization.
+
+    This is SEPARATE from the role: a venue_kj / location_manager must have been
+    explicitly activated (users.staff_active == True) by a global_admin. The role
+    alone never grants staff access. global_admin is always authorized; singers
+    never are.
+    """
     role = roles.resolve_role(user)
     if role == roles.ROLE_GLOBAL_ADMIN:
         return True
+    if role in (roles.ROLE_VENUE_KJ, roles.ROLE_LOCATION_MANAGER):
+        return bool((user or {}).get("staff_active"))
+    return False
+
+
+def staff_can_access_event(user: dict, event: dict) -> bool:
+    """True iff a STAFF user is in scope for this event AND has active staff
+    authorization. Singers are never staff -> False. A deactivated KJ/LM -> False."""
+    role = roles.resolve_role(user)
+    if role == roles.ROLE_GLOBAL_ADMIN:
+        return True
+    if not staff_authorized(user):
+        return False
     sc = _scope(user)
     if role == roles.ROLE_LOCATION_MANAGER:
         return event.get("location_id") in sc["location_ids"]
@@ -67,11 +86,11 @@ def require_staff(user: dict) -> None:
 
 def can_access_location(user: dict, location_id: str) -> bool:
     """True iff the user may manage resources under this location.
-    global_admin -> any; location_manager -> location_id in scope; others -> False."""
+    global_admin -> any; ACTIVE location_manager -> location_id in scope; others -> False."""
     role = roles.resolve_role(user)
     if role == roles.ROLE_GLOBAL_ADMIN:
         return True
-    if role == roles.ROLE_LOCATION_MANAGER:
+    if role == roles.ROLE_LOCATION_MANAGER and staff_authorized(user):
         return location_id in _scope(user)["location_ids"]
     return False
 
@@ -84,10 +103,13 @@ def require_location_staff(user: dict, location_id: str) -> None:
 
 def events_scope_query(user: dict) -> dict:
     """Mongo filter restricting an events listing to the caller's scope.
-    global_admin -> {} (all). location_manager/venue_kj -> scoped. singer -> match none."""
+    global_admin -> {} (all). ACTIVE location_manager/venue_kj -> scoped.
+    singer or deactivated staff -> match none."""
     role = roles.resolve_role(user)
     if role == roles.ROLE_GLOBAL_ADMIN:
         return {}
+    if not staff_authorized(user):
+        return {"id": {"$in": []}}
     sc = _scope(user)
     if role == roles.ROLE_LOCATION_MANAGER:
         return {"location_id": {"$in": sc["location_ids"]}}

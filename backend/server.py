@@ -367,6 +367,9 @@ async def register(data: UserCreate):
         "consecutive_visits": 0,
         "badges": [],
         "is_admin": False,
+        "role": "singer",
+        "staff_active": False,
+        "role_scope": {"location_ids": [], "venue_ids": []},
         "created_at": datetime.now(timezone.utc).isoformat(),
         "last_visit": datetime.now(timezone.utc).isoformat()
     }
@@ -440,6 +443,7 @@ async def login(data: UserLogin):
             "is_admin": user.get("is_admin", False),
             "role": user.get("role") or ("global_admin" if user.get("is_admin") else "singer"),
             "role_scope": user.get("role_scope") or {"location_ids": [], "venue_ids": []},
+            "staff_active": bool(user.get("staff_active")) or bool(user.get("is_admin")),
             "created_at": user["created_at"]
         }
     }
@@ -462,6 +466,7 @@ async def get_me(user: dict = Depends(get_current_user)):
         "is_admin": user.get("is_admin", False),
         "role": user.get("role") or ("global_admin" if user.get("is_admin") else "singer"),
         "role_scope": user.get("role_scope") or {"location_ids": [], "venue_ids": []},
+        "staff_active": bool(user.get("staff_active")) or bool(user.get("is_admin")),
         "created_at": user["created_at"]
     }
 
@@ -1408,6 +1413,75 @@ async def toggle_admin(user_id: str, admin_user: dict = Depends(get_admin_user))
     new_status = not target.get("is_admin", False)
     await db.users.update_one({"id": user_id}, {"$set": {"is_admin": new_status}})
     return {"message": f"Admin status set to {new_status}"}
+
+
+# ==================== STAFF (KJ) AUTHORIZATION MANAGEMENT ====================
+# Only a global_admin (get_admin_user -> is_admin) may grant/revoke Venue KJ staff
+# access, activate/deactivate it, and set the authorized location/venue scope.
+# This can never escalate a user to global_admin, and a venue_kj can never call it.
+STAFF_ASSIGNABLE_ROLES = {"singer", "venue_kj", "location_manager"}
+
+
+class StaffGrant(BaseModel):
+    role: str
+    staff_active: bool = False
+    location_ids: List[str] = []
+    venue_ids: List[str] = []
+
+
+@api_router.get("/admin/staff")
+async def list_staff(admin_user: dict = Depends(get_admin_user)):
+    """List all users who hold (or could hold) a staff role, with scope + active flag."""
+    rows = await db.users.find(
+        {"role": {"$in": ["venue_kj", "location_manager"]}},
+        {"_id": 0, "password": 0}).to_list(1000)
+    return [{
+        "id": u["id"], "email": u["email"], "display_name": u["display_name"],
+        "role": u.get("role", "singer"), "staff_active": bool(u.get("staff_active")),
+        "role_scope": u.get("role_scope") or {"location_ids": [], "venue_ids": []},
+    } for u in rows]
+
+
+@api_router.put("/admin/users/{user_id}/staff")
+async def set_user_staff(user_id: str, data: StaffGrant, admin_user: dict = Depends(get_admin_user)):
+    """Grant/revoke Venue KJ (or Location Manager) staff access and set scope.
+    Never assigns global_admin and never touches is_admin."""
+    if data.role not in STAFF_ASSIGNABLE_ROLES:
+        raise HTTPException(status_code=400, detail="Role must be one of: singer, venue_kj, location_manager")
+    target = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("is_admin") or target.get("role") == "global_admin":
+        raise HTTPException(status_code=403, detail="Cannot modify a global admin's staff authorization here")
+
+    # Validate the requested scope actually exists (no phantom locations/venues).
+    location_ids, venue_ids = [], []
+    if data.role != "singer":
+        if data.venue_ids:
+            found = await db.venues.find({"id": {"$in": data.venue_ids}}, {"_id": 0, "id": 1}).to_list(1000)
+            found_ids = {v["id"] for v in found}
+            missing = [v for v in data.venue_ids if v not in found_ids]
+            if missing:
+                raise HTTPException(status_code=400, detail=f"Unknown venue(s): {missing}")
+            venue_ids = list(dict.fromkeys(data.venue_ids))
+        if data.location_ids:
+            found = await db.locations.find({"id": {"$in": data.location_ids}}, {"_id": 0, "id": 1}).to_list(1000)
+            found_ids = {l["id"] for l in found}
+            missing = [l for l in data.location_ids if l not in found_ids]
+            if missing:
+                raise HTTPException(status_code=400, detail=f"Unknown location(s): {missing}")
+            location_ids = list(dict.fromkeys(data.location_ids))
+
+    if data.role == "singer":
+        # Revoking staff entirely: clear role/scope and force inactive.
+        upd = {"role": "singer", "staff_active": False,
+               "role_scope": {"location_ids": [], "venue_ids": []}}
+    else:
+        upd = {"role": data.role, "staff_active": bool(data.staff_active),
+               "role_scope": {"location_ids": location_ids, "venue_ids": venue_ids}}
+    await db.users.update_one({"id": user_id}, {"$set": upd})
+    return {"message": "Staff authorization updated", "user_id": user_id,
+            "role": upd["role"], "staff_active": upd["staff_active"], "role_scope": upd["role_scope"]}
 
 
 @api_router.delete("/admin/users/{user_id}")

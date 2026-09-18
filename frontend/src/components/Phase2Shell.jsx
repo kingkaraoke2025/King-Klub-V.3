@@ -19,10 +19,16 @@ export const Phase2Shell = ({ title, subtitle, crumbs = [], back, actions, child
           </div>
           <div className="flex items-center gap-2">
             {user?.is_admin ? (
-              <button onClick={() => navigate('/admin')} data-testid="phase2-exit-btn"
-                className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
-                Phase 1 Admin
-              </button>
+              <>
+                <button onClick={() => navigate('/admin/phase2/staff')} data-testid="phase2-staff-btn"
+                  className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
+                  Staff
+                </button>
+                <button onClick={() => navigate('/admin')} data-testid="phase2-exit-btn"
+                  className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
+                  Phase 1 Admin
+                </button>
+              </>
             ) : (
               <>
                 <button onClick={() => navigate('/admin/kj')} data-testid="phase2-kj-console-btn"

@@ -4,7 +4,7 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 export const FRONTEND_URL = window.location.origin;
 
 export const STAFF_ROLES = ['global_admin', 'location_manager', 'venue_kj'];
-export const isStaff = (u) => !!u && (u.is_admin || STAFF_ROLES.includes(u.role));
+export const isStaff = (u) => !!u && (u.is_admin || (STAFF_ROLES.includes(u.role) && !!u.staff_active));
 export const isGlobalAdmin = (u) => !!u && (u.role === 'global_admin' || (u.is_admin && !u.role));
 export const roleLabel = (r) => ({
   global_admin: 'Global Admin', location_manager: 'Location Manager',
@@ -46,6 +46,10 @@ export const p2 = {
   finalizeBattle: (eid, bid) => axios.post(`${API}/events/${eid}/battles/${bid}/finalize`).then((r) => r.data),
   pickBattleWinner: (eid, bid, winner_id) => axios.post(`${API}/events/${eid}/battles/${bid}/pick-winner`, { winner_id }).then((r) => r.data),
   cancelBattle: (eid, bid) => axios.post(`${API}/events/${eid}/battles/${bid}/cancel`).then((r) => r.data),
+  // Staff (KJ) authorization management (global_admin only)
+  listStaff: () => axios.get(`${API}/admin/staff`).then((r) => r.data),
+  adminUsers: () => axios.get(`${API}/admin/users`).then((r) => r.data),
+  setStaff: (userId, body) => axios.put(`${API}/admin/users/${userId}/staff`, body).then((r) => r.data),
 };
 
 export const qrImage = (url) =>

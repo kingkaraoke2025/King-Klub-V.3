@@ -511,6 +511,14 @@ const AdminPage = () => {
               Phase 2 Admin
             </Button>
             <Button
+              onClick={() => navigate('/admin/phase2/staff')}
+              data-testid="open-staff-mgmt-btn"
+              className="bg-white/5 border border-gold/40 text-gold hover:bg-gold/10"
+            >
+              <UserCheck className="w-4 h-4 mr-2" />
+              Staff Access
+            </Button>
+            <Button
               onClick={handleRefresh}
               disabled={refreshing}
               data-testid="refresh-btn"

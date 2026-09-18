@@ -24,11 +24,15 @@ const AdminLoginPage = () => {
     try {
       const user = await login(email, password);
       
-      // Staff = global_admin / location_manager / venue_kj (role from DB) or legacy is_admin
+      // Staff = global_admin (is_admin) OR an ACTIVE venue_kj / location_manager.
+      // Role alone is NOT enough — staff authorization must be active (backend-enforced too).
       const STAFF_ROLES = ['global_admin', 'location_manager', 'venue_kj'];
-      const isStaff = user.is_admin || STAFF_ROLES.includes(user.role);
+      const hasStaffRole = STAFF_ROLES.includes(user.role);
+      const isStaff = user.is_admin || (hasStaffRole && user.staff_active);
       if (!isStaff) {
-        setError('Access denied. Staff privileges required.');
+        setError(hasStaffRole
+          ? 'Your staff access is not active. Please contact an administrator to be authorized.'
+          : 'Access denied. Staff privileges required.');
         setLoading(false);
         return;
       }

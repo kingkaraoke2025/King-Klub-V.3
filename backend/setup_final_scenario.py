@@ -28,14 +28,16 @@ def login(email, pw):
 
 def upsert_user(uid, email, name, pw, is_admin, role, scope):
     now = datetime.now(timezone.utc).isoformat()
+    staff_active = role in ("venue_kj", "location_manager")
     doc = {"id": uid, "email": email, "display_name": name,
            "password": bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode(),
            "title_preference": "male", "points": 0, "nightly_points": 0, "songs_performed": 0,
            "consecutive_visits": 0, "badges": [], "is_admin": is_admin, "role": role,
-           "role_scope": scope, "created_at": now, "last_visit": now}
+           "staff_active": staff_active, "role_scope": scope, "created_at": now, "last_visit": now}
     if db.users.find_one({"email": email}):
         db.users.update_one({"email": email}, {"$set": {"is_admin": is_admin, "role": role,
-                             "role_scope": scope, "password": doc["password"], "display_name": name}})
+                             "staff_active": staff_active, "role_scope": scope,
+                             "password": doc["password"], "display_name": name}})
     else:
         db.users.insert_one(doc)
 
