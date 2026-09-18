@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 import authz
+import phase2_battles
 import phase2_events
 import phase2_seasons
 from models_phase2 import Event, Location, Venue
@@ -112,7 +113,7 @@ class EventStatusInput(BaseModel):
 
 
 def register_phase2(app, api_router, db, manager, get_current_user, get_admin_user,
-                    get_rank, get_user_rank_name, rank_perks):
+                    get_rank, get_user_rank_name, rank_perks, challenge_types=None):
     """Attach all Phase 2 endpoints/routers/hooks. Called from server.py before
     app.include_router(api_router)."""
 
@@ -350,6 +351,9 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
     app.include_router(phase2_seasons.build_router(
         db, manager, get_current_user, get_admin_user, EVENT_QR_ENABLED,
         get_rank, get_user_rank_name, SEASON_CFG))
+    app.include_router(phase2_battles.build_router(
+        db, manager, get_current_user, EVENT_QR_ENABLED, challenge_types or {},
+        award_ledger=award_ledger_bound))
 
     # -------------------- Cron: annual season reset --------------------
     @api_router.post("/cron/season-reset")

@@ -261,7 +261,7 @@ def build_router(db, manager, get_current_user, get_admin_user, event_qr_enabled
             await db.season_accomplishments.insert_one({
                 "id": str(uuid.uuid4()), "user_id": body.user_id, "season_id": season["id"],
                 "season_year": season["year"], "event_id": event_id, "action_id": body.action_id,
-                "notes": body.notes, "points": body.points, "earned_at": _iso()})
+                "notes": body.notes, "points": body.points, "awarded_by": user["id"], "earned_at": _iso()})
             await db.season_participation.update_one(
                 {"id": sp["id"]}, {"$push": {"accomplishments": body.action_id}})
 

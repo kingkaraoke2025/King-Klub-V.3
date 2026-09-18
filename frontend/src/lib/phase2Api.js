@@ -32,8 +32,20 @@ export const p2 = {
   setCurrent: (eid, iid) => axios.post(`${API}/events/${eid}/queue/${iid}/set-current`).then((r) => r.data),
   moveUp: (eid, iid) => axios.post(`${API}/events/${eid}/queue/${iid}/move-up`).then((r) => r.data),
   moveDown: (eid, iid) => axios.post(`${API}/events/${eid}/queue/${iid}/move-down`).then((r) => r.data),
+  reorderQueue: (eid, iid, new_position) => axios.post(`${API}/events/${eid}/queue/${iid}/reorder`, { new_position }).then((r) => r.data),
+  removeSong: (eid, iid) => axios.delete(`${API}/events/${eid}/queue/${iid}`).then((r) => r.data),
   awardPoints: (eid, body) => axios.post(`${API}/events/${eid}/award-points`, body).then((r) => r.data),
+  pointActions: () => axios.get(`${API}/point-actions`).then((r) => r.data),
   checkin: (token) => axios.post(`${API}/e/checkin/${token}`).then((r) => r.data),
+  // Event-scoped battles
+  battles: (eid) => axios.get(`${API}/events/${eid}/battles`).then((r) => r.data),
+  battleTypes: (eid) => axios.get(`${API}/events/${eid}/battle-types`).then((r) => r.data),
+  createBattle: (eid, body) => axios.post(`${API}/events/${eid}/battles`, body).then((r) => r.data),
+  openBattleVoting: (eid, bid) => axios.post(`${API}/events/${eid}/battles/${bid}/open-voting`).then((r) => r.data),
+  closeBattleVoting: (eid, bid) => axios.post(`${API}/events/${eid}/battles/${bid}/close-voting`).then((r) => r.data),
+  finalizeBattle: (eid, bid) => axios.post(`${API}/events/${eid}/battles/${bid}/finalize`).then((r) => r.data),
+  pickBattleWinner: (eid, bid, winner_id) => axios.post(`${API}/events/${eid}/battles/${bid}/pick-winner`, { winner_id }).then((r) => r.data),
+  cancelBattle: (eid, bid) => axios.post(`${API}/events/${eid}/battles/${bid}/cancel`).then((r) => r.data),
 };
 
 export const qrImage = (url) =>

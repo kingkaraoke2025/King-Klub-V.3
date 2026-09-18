@@ -2667,7 +2667,7 @@ async def root():
 import phase2_server  # noqa: E402
 phase2_server.register_phase2(
     app, api_router, db, manager, get_current_user, get_admin_user,
-    get_rank, get_user_rank_name, RANK_PERKS,
+    get_rank, get_user_rank_name, RANK_PERKS, challenge_types=CHALLENGE_TYPES,
 )
 
 # Include router
