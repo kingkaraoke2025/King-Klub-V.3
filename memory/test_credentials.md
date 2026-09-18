@@ -15,6 +15,13 @@
 | singer | `singer2@kingkaraoke2025.com` | `Singer!2026` | — |
 | singer | `dakota@hotmail.com` | `Dakota!2026` | — |
 
+## Staff authorization model (added 2026-06-18)
+- Staff access = **role (venue_kj/location_manager) + `users.staff_active=true`**. Role alone grants nothing.
+- Signup always creates `role=singer, staff_active=false`. Only global_admin grants/revokes via Staff Management (`/admin/phase2/staff` → `PUT /api/admin/users/{id}/staff`).
+- global_admin is always staff (is_admin). Deactivation/revocation takes effect immediately (DB re-read each request; staff_active is NOT in the JWT).
+- Backend enforces everything (403); frontend gating is cosmetic. Seeded `kj@`/`lm@` are pre-activated (`staff_active=true`).
+- Staff Portal = `/admin/login`. Singer login = `/login` (no KJ controls).
+
 Routing: global_admin → `/admin` (has "Phase 2 Admin" button → `/admin/phase2`); other staff → `/admin/phase2`.
 
 ## Named verification scenario (created by setup_final_scenario.py)

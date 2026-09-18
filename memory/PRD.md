@@ -320,3 +320,26 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 
 ### Known non-blocking item (deferred)
 - Benign WebSocket `/api/ws` console noise on Phase 2 pages (legacy Phase 1 hook). Cosmetic only.
+
+---
+
+## Changelog — 2026-06-18 (Staff Authorization Model)
+
+**Context:** Isolated Phase 2 DEV only. No production.
+
+### Delivered
+- **Staff authorization layer** on top of the role model: new `users.staff_active` flag. A `venue_kj`/`location_manager` needs `staff_active=true` to access ANY staff/KJ operation — role alone grants nothing. `global_admin` always authorized.
+- **Signup grants no staff**: `register` sets `role=singer, staff_active=false`. `login`/`/auth/me` now return `staff_active`.
+- **Dev-Admin-only staff management**: `GET /api/admin/staff`, `PUT /api/admin/users/{id}/staff` (StaffGrant: role∈{singer,venue_kj,location_manager}, staff_active, location_ids, venue_ids). Cannot assign global_admin, cannot modify an admin, validates venue/location ids, revoke (role=singer) clears scope + forces inactive.
+- **Backend gates** (`authz.py`): `staff_authorized()`; `is_staff`/`staff_can_access_event`/`can_access_location`/`events_scope_query` all require active staff auth. Deactivation is immediate (DB re-read per request; staff_active never in JWT).
+- **Frontend**: Staff Portal (`/admin/login`) + `ProtectedRoute` require `staff_active` for non-admin staff; new **Staff Management** page `/admin/phase2/staff` (search users, grant/revoke Venue KJ, activate/deactivate, assign venues). Entry points: Phase-1 Admin header "Staff Access" + Phase 2 shell "Staff".
+
+### Security verified
+- No self-grant / self-promote (endpoints are is_admin-only; venue_kj → 403). Cannot escalate to global_admin. Deactivated/revoked KJ → immediate 403 + Staff Portal denial + route redirect. Singers cannot reach KJ/admin pages. Existing event isolation intact.
+
+### Testing
+- Backend: `backend/test_staff_auth.py` **29/29 pass**; `backend/test_kj_phase2.py` **24/24** (no regression).
+- Frontend: `test_reports/iteration_12.json` — **18/18 UI assertions pass** (full grant→login→revoke→denied lifecycle). No UI bugs.
+
+### Known minor (pre-existing, not introduced here)
+- `/api/auth/me` can return 429 during very rapid page navigation (existing rate limiter). Non-blocking; cosmetic loading flashes only.
