@@ -44,6 +44,11 @@ class BattleCreate(BaseModel):
     challenge_type: str
 
 
+class BattleRequestBody(BaseModel):
+    opponent_id: str
+    challenge_type: str
+
+
 class VoteBody(BaseModel):
     choice: str  # "challenger" | "opponent"
 
@@ -123,41 +128,72 @@ def build_router(db, manager, get_current_user, event_qr_enabled, challenge_type
         authz.require_event_view(user, ev)
         return [{"id": k, **v} for k, v in challenge_types.items()]
 
+    async def _create_battle(ev, event_id, challenger_id, opponent_id, challenge_type, created_by, source):
+        if ev["status"] not in OPEN_STATUSES:
+            raise HTTPException(status_code=400, detail=f"Event is not open (status: {ev['status']})")
+        if challenge_type not in challenge_types:
+            raise HTTPException(status_code=400, detail="Invalid challenge type")
+        if challenger_id == opponent_id:
+            raise HTTPException(status_code=400, detail="A singer cannot battle themselves")
+        # BOTH contestants must be checked into THIS event (server-side; manual IDs cannot bypass).
+        await _require_checked_in(event_id, challenger_id, "Challenger")
+        await _require_checked_in(event_id, opponent_id, "Opponent")
+        existing = await db.event_challenges.find_one({
+            "event_id": event_id, "status": {"$in": ["pending", "voting"]},
+            "$or": [
+                {"challenger_id": challenger_id, "opponent_id": opponent_id},
+                {"challenger_id": opponent_id, "opponent_id": challenger_id},
+            ]}, {"_id": 0})
+        if existing:
+            raise HTTPException(status_code=400, detail="An active battle already exists between these singers in this event")
+        battle = {
+            "id": str(uuid.uuid4()), "event_id": event_id, "venue_id": ev["venue_id"],
+            "location_id": ev.get("location_id"), "challenger_id": challenger_id,
+            "opponent_id": opponent_id, "type": challenge_type, "status": "pending",
+            "voting_open": False, "winner_id": None, "created_by": created_by, "source": source,
+            "created_at": _iso(), "updated_at": _iso(),
+        }
+        await db.event_challenges.insert_one(dict(battle))
+        battle.pop("_id", None)
+        umap = await _names([battle["challenger_id"], battle["opponent_id"]])
+        action = "requested" if source == "singer_request" else "created"
+        await manager.broadcast_event(event_id, {"type": "EVENT_BATTLE_UPDATED", "action": action,
+                                                 "event_id": event_id, "battle_id": battle["id"]})
+        return await _decorate(battle, umap, my_id=created_by)
+
     # -------------------- CREATE (staff, scope-checked) --------------------
     @router.post("/events/{event_id}/battles")
     async def create_event_battle(event_id: str, data: BattleCreate, user: dict = Depends(get_current_user)):
         _flag()
         ev = await _get_event(event_id)
         authz.require_event_staff(user, ev)
-        if ev["status"] not in OPEN_STATUSES:
-            raise HTTPException(status_code=400, detail=f"Event is not open (status: {ev['status']})")
-        if data.challenge_type not in challenge_types:
-            raise HTTPException(status_code=400, detail="Invalid challenge type")
-        if data.challenger_id == data.opponent_id:
-            raise HTTPException(status_code=400, detail="A singer cannot battle themselves")
-        await _require_checked_in(event_id, data.challenger_id, "Challenger")
-        await _require_checked_in(event_id, data.opponent_id, "Opponent")
-        existing = await db.event_challenges.find_one({
-            "event_id": event_id, "status": {"$in": ["pending", "voting"]},
-            "$or": [
-                {"challenger_id": data.challenger_id, "opponent_id": data.opponent_id},
-                {"challenger_id": data.opponent_id, "opponent_id": data.challenger_id},
-            ]}, {"_id": 0})
-        if existing:
-            raise HTTPException(status_code=400, detail="An active battle already exists between these singers in this event")
-        battle = {
-            "id": str(uuid.uuid4()), "event_id": event_id, "venue_id": ev["venue_id"],
-            "location_id": ev.get("location_id"), "challenger_id": data.challenger_id,
-            "opponent_id": data.opponent_id, "type": data.challenge_type, "status": "pending",
-            "voting_open": False, "winner_id": None, "created_by": user["id"],
-            "created_at": _iso(), "updated_at": _iso(),
-        }
-        await db.event_challenges.insert_one(dict(battle))
-        battle.pop("_id", None)
-        umap = await _names([battle["challenger_id"], battle["opponent_id"]])
-        await manager.broadcast_event(event_id, {"type": "EVENT_BATTLE_UPDATED", "action": "created",
-                                                 "event_id": event_id, "battle_id": battle["id"]})
-        return await _decorate(battle, umap, my_id=user["id"])
+        return await _create_battle(ev, event_id, data.challenger_id, data.opponent_id,
+                                    data.challenge_type, user["id"], "kj")
+
+    # -------------------- SINGER-INITIATED REQUEST (checked-in participant) --------------------
+    @router.post("/events/{event_id}/battle-requests")
+    async def request_event_battle(event_id: str, data: BattleRequestBody, user: dict = Depends(get_current_user)):
+        """A singer CHECKED INTO this event proposes a battle vs another checked-in singer.
+        Creates a PENDING battle the authorized KJ must start. Fully event-scoped: the requester
+        and opponent must both be checked into THIS event; cross-event/venue is impossible."""
+        _flag()
+        ev = await _get_event(event_id)
+        authz.require_event_view(user, ev)  # participants may view/act within their event
+        await _require_checked_in(event_id, user["id"], "You")
+        return await _create_battle(ev, event_id, user["id"], data.opponent_id,
+                                    data.challenge_type, user["id"], "singer_request")
+
+    @router.get("/events/{event_id}/battle-requests/pending")
+    async def pending_battle_requests(event_id: str, user: dict = Depends(get_current_user)):
+        """KJ notification source: pending battles (KJ-created or singer-requested) awaiting action."""
+        _flag()
+        ev = await _get_event(event_id)
+        authz.require_event_staff(user, ev)
+        rows = await db.event_challenges.find(
+            {"event_id": event_id, "status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(200)
+        umap = await _names([i for b in rows for i in (b["challenger_id"], b["opponent_id"])])
+        return {"event_id": event_id, "pending_count": len(rows),
+                "requests": [await _decorate(b, umap, my_id=user["id"]) for b in rows]}
 
     # -------------------- VOTING (staff, scope-checked) --------------------
     @router.post("/events/{event_id}/battles/{battle_id}/open-voting")

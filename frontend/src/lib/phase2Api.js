@@ -41,6 +41,8 @@ export const p2 = {
   battles: (eid) => axios.get(`${API}/events/${eid}/battles`).then((r) => r.data),
   battleTypes: (eid) => axios.get(`${API}/events/${eid}/battle-types`).then((r) => r.data),
   createBattle: (eid, body) => axios.post(`${API}/events/${eid}/battles`, body).then((r) => r.data),
+  requestBattle: (eid, body) => axios.post(`${API}/events/${eid}/battle-requests`, body).then((r) => r.data),
+  pendingBattleRequests: (eid) => axios.get(`${API}/events/${eid}/battle-requests/pending`).then((r) => r.data),
   openBattleVoting: (eid, bid) => axios.post(`${API}/events/${eid}/battles/${bid}/open-voting`).then((r) => r.data),
   closeBattleVoting: (eid, bid) => axios.post(`${API}/events/${eid}/battles/${bid}/close-voting`).then((r) => r.data),
   finalizeBattle: (eid, bid) => axios.post(`${API}/events/${eid}/battles/${bid}/finalize`).then((r) => r.data),

@@ -118,6 +118,11 @@ const EventManagePage = () => {
   const loadQR = async () => { try { setQr(await p2.eventQR(eventId)); } catch (e) { toast.error(e.response?.data?.detail || 'QR failed'); } };
 
   useEffect(() => { loadEvent(); loadQueue(); loadSingers(); loadBattles(); }, [loadEvent, loadQueue, loadSingers, loadBattles]);
+  // Near-real-time KJ notification of pending battle requests (polling; App already polls elsewhere).
+  useEffect(() => {
+    const id = setInterval(() => { loadBattles(); }, 12000);
+    return () => clearInterval(id);
+  }, [loadBattles]);
   useEffect(() => { p2.pointActions().then(setPointActions).catch(() => {}); p2.battleTypes(eventId).then(setBattleTypes).catch(() => {}); }, [eventId]);
   useEffect(() => { if (event) p2.venues().then((vs) => setVenueName(vs.find((v) => v.id === event.venue_id)?.name || '')).catch(() => {}); }, [event]);
 
@@ -125,6 +130,7 @@ const EventManagePage = () => {
   const pending = useMemo(() => queue.filter((q) => q.status === 'pending'), [queue]);
   const songsDone = useMemo(() => singers.reduce((n, s) => n + (s.songs_performed || 0), 0), [singers]);
   const activeBattles = useMemo(() => battles.filter((b) => b.status === 'pending' || b.status === 'voting'), [battles]);
+  const pendingRequests = useMemo(() => battles.filter((b) => b.status === 'pending'), [battles]);
 
   const checkinUrl = qr ? `${FRONTEND_URL}${qr.checkin_path}` : '';
   const copy = () => { navigator.clipboard.writeText(checkinUrl); setCopied(true); toast.success('Check-in URL copied'); setTimeout(() => setCopied(false), 1500); };
@@ -199,7 +205,7 @@ const EventManagePage = () => {
           <TabsTrigger value="queue" data-testid="tab-queue" className="data-[state=active]:bg-gold/20 data-[state=active]:text-gold"><Mic2 className="w-4 h-4 mr-2" />Queue</TabsTrigger>
           <TabsTrigger value="singers" data-testid="tab-singers" className="data-[state=active]:bg-gold/20 data-[state=active]:text-gold"><Users className="w-4 h-4 mr-2" />Singers</TabsTrigger>
           <TabsTrigger value="award" data-testid="tab-award" className="data-[state=active]:bg-gold/20 data-[state=active]:text-gold"><Gift className="w-4 h-4 mr-2" />Award Points</TabsTrigger>
-          <TabsTrigger value="battles" data-testid="tab-battles" className="data-[state=active]:bg-gold/20 data-[state=active]:text-gold"><Swords className="w-4 h-4 mr-2" />Battles ({activeBattles.length})</TabsTrigger>
+          <TabsTrigger value="battles" data-testid="tab-battles" className="data-[state=active]:bg-gold/20 data-[state=active]:text-gold relative"><Swords className="w-4 h-4 mr-2" />Battles ({activeBattles.length}){pendingRequests.length > 0 && <span data-testid="battles-pending-dot" className="ml-1 w-2 h-2 bg-green-400 rounded-full animate-pulse" />}</TabsTrigger>
           <TabsTrigger value="leaderboard" data-testid="tab-leaderboard" className="data-[state=active]:bg-gold/20 data-[state=active]:text-gold"><Trophy className="w-4 h-4 mr-2" />Leaderboard</TabsTrigger>
           <TabsTrigger value="qr" data-testid="tab-qr" className="data-[state=active]:bg-gold/20 data-[state=active]:text-gold"><QrCode className="w-4 h-4 mr-2" />QR Check-In</TabsTrigger>
         </TabsList>
@@ -319,6 +325,14 @@ const EventManagePage = () => {
 
         {/* BATTLES */}
         <TabsContent value="battles" className="mt-6 space-y-6" data-testid="battles-panel">
+          {pendingRequests.length > 0 && (
+            <div className="glass-card p-4 border border-green-500/40 flex items-center gap-3" data-testid="pending-battles-banner">
+              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-green-300 text-sm font-medium">
+                {pendingRequests.length} battle{pendingRequests.length > 1 ? 's' : ''} pending — start voting or pick a winner below.
+              </span>
+            </div>
+          )}
           <div className="glass-card p-5" data-testid="create-battle-card">
             <h2 className="font-cinzel text-lg text-gold mb-4 flex items-center gap-2"><Swords className="w-5 h-5" /> Start a Battle</h2>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -344,7 +358,7 @@ const EventManagePage = () => {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4">
                     <div className="p-3 bg-gold/10 rounded-xl"><Swords className="w-6 h-6 text-gold" /></div>
-                    <div><p className="text-white/60 text-sm">{b.type_info?.name}</p>
+                    <div><p className="text-white/60 text-sm">{b.type_info?.name}{b.source === 'singer_request' && <span className="ml-2 text-green-400" data-testid={`battle-source-${b.id}`}>• Requested by singer</span>}</p>
                       <h3 className="font-cinzel font-bold text-lg text-white">{b.challenger_name} <span className="text-gold">vs</span> {b.opponent_name}</h3></div>
                   </div>
                   <div className="text-right"><p className="text-white/60 text-sm">Votes</p><p className="text-gold font-bold text-xl" data-testid={`battle-votes-${b.id}`}>{b.votes_challenger} – {b.votes_opponent}</p></div>

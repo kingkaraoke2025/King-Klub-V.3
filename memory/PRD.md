@@ -363,3 +363,12 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 - **Frontend**: KJ award toast surfaces unlocked badges + bonus points.
 - **Note**: The KJ-reported "award failed" was the stale-domain/ingress browser issue (backend award returns 200); resolved by using the king-v3-staging preview URL.
 - **Tests**: new `backend/test_kj_badges.py` 14/14 (unlock, idempotency, milestone, event/season-only attribution, isolation, singer 403, singer-facing display). Regression: test_staff_auth 29/29, test_kj_phase2 24/24, focused_verify 22/22. King kota now correctly holds `random_warrior`.
+
+---
+
+## Changelog — 2026-06-18 (Singer-initiated event battle requests + KJ pending notification)
+- **Legacy singer-to-singer battles fully preserved** (separate `/api/challenges*`, `db.challenges`) — verified still working (create/accept/vote/list).
+- Added `POST /api/events/{id}/battle-requests` (checked-in singer proposes a battle vs another checked-in singer in the SAME event; creates a pending `event_challenge` with `source=singer_request`). Shared `_create_battle` helper enforces: both contestants checked-in, event-open, no dup, event/venue immutable on the doc.
+- Added `GET /api/events/{id}/battle-requests/pending` (require_event_staff) as the KJ notification source.
+- KJ console (`EventManagePage`): Battles tab shows a green pending dot + "N battle(s) pending" banner + "Requested by singer" label; polls battles every 12s (existing polling pattern). KJ runs the full lifecycle pending→voting→completed with event/season points.
+- Tests: `backend/test_battle_requests.py` 16/16 (request, KJ pending notify, lifecycle, cross-event/venue rejection, foreign-singer rejection, unchecked-in rejection, staff-only pending, legacy intact). Regression: staff_auth 29, kj_phase2 24, focused 22, kj_badges 14 — all pass.
