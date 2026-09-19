@@ -372,3 +372,13 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 - Added `GET /api/events/{id}/battle-requests/pending` (require_event_staff) as the KJ notification source.
 - KJ console (`EventManagePage`): Battles tab shows a green pending dot + "N battle(s) pending" banner + "Requested by singer" label; polls battles every 12s (existing polling pattern). KJ runs the full lifecycle pending→voting→completed with event/season points.
 - Tests: `backend/test_battle_requests.py` 16/16 (request, KJ pending notify, lifecycle, cross-event/venue rejection, foreign-singer rejection, unchecked-in rejection, staff-only pending, legacy intact). Regression: staff_auth 29, kj_phase2 24, focused 22, kj_badges 14 — all pass.
+
+---
+
+## Changelog — 2026-06-18 (Location ZIP -> auto timezone + safe delete/archive)
+- Added offline `backend/zip_timezone.py` (pgeocode US ZIP->lat/lng + timezonefinder lat/lng->IANA). Reliable geographic lookup, not prefix heuristics; never guesses.
+- `Location` model (models_phase2.py): additive `zip_code` + `archived` fields (existing locations unaffected; no migration/recreate needed).
+- Endpoints (global_admin only): `GET /admin/locations/zip-timezone?zip=` (live preview), create/update now derive IANA tz from ZIP (invalid ZIP -> 400, no save; no ZIP -> keep existing/default tz), `GET /admin/locations/{id}/dependents`, `DELETE /admin/locations/{id}` (hard-delete ONLY when zero venues/events/staff, else 409), `POST .../archive` + `.../unarchive` (soft delete preserving all history).
+- Frontend LocationsPage: ZIP field with debounced live timezone preview (read-only, green check / red warning), edit/archive/delete controls, archived badge + restore. Save blocked if ZIP present but tz unresolved.
+- Deps frozen: pgeocode==0.5.0, timezonefinder==9.0.0.
+- Tests: `backend/test_location_zip.py` 21/21 (ZIP->IANA for 4 zones, invalid/unknown rejected, create/edit recalcs, no-ZIP still works, KJ/singer 403, no-dep hard delete, dep 409, archive/unarchive preserves venues). Regression: staff_auth 29, focused 22, kj_phase2 24.

@@ -79,8 +79,10 @@ class Location(BaseDoc):
     city: Optional[str] = None
     state: Optional[str] = None
     country: str = "USA"
+    zip_code: Optional[str] = None  # US ZIP; drives automatic timezone resolution
     timezone: str = "America/Chicago"  # per-location IANA tz (no global hardcode)
     active: bool = True
+    archived: bool = False  # soft-delete when dependent data exists
     is_sample: bool = False
     is_default_legacy: bool = False
     env: str = "production"

@@ -35,6 +35,7 @@ import authz
 import phase2_battles
 import phase2_events
 import phase2_seasons
+import zip_timezone
 from models_phase2 import Event, Location, Venue
 
 # ---- Config (env-driven, dev-safe defaults) --------------------------------
@@ -89,7 +90,8 @@ class LocationInput(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     country: str = "USA"
-    timezone: str = "America/Chicago"
+    zip_code: Optional[str] = None
+    timezone: Optional[str] = None  # auto-derived from zip_code; not manually chosen
 
 
 class VenueInput(BaseModel):
@@ -142,16 +144,41 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         return ev
 
     # -------------------- LOCATIONS (global_admin only) --------------------
+    def _resolve_location_tz(data: LocationInput, existing: dict = None):
+        """Derive fields from ZIP. If a ZIP is provided it MUST resolve to a timezone,
+        else 400 (never silently guess). Without a ZIP, keep existing/default timezone."""
+        zip_code = (data.zip_code or "").strip() or None
+        fields = {"name": data.name, "city": data.city, "state": data.state,
+                  "country": data.country or "USA"}
+        if zip_code:
+            res = zip_timezone.resolve_zip_timezone(zip_code)
+            if not res["ok"]:
+                raise HTTPException(status_code=400, detail=res["error"])
+            fields["zip_code"] = res["zip"]
+            fields["timezone"] = res["timezone"]
+        else:
+            fields["zip_code"] = None
+            fields["timezone"] = (existing or {}).get("timezone") or data.timezone or "America/Chicago"
+        return fields
+
+    @api_router.get("/admin/locations/zip-timezone")
+    async def location_zip_timezone(zip: str, user: dict = Depends(get_current_user)):
+        """Live ZIP -> IANA timezone preview for the admin form."""
+        authz.require_global_admin(user)
+        return zip_timezone.resolve_zip_timezone(zip)
+
     @api_router.get("/admin/locations")
-    async def list_locations(user: dict = Depends(get_current_user)):
+    async def list_locations(include_archived: bool = True, user: dict = Depends(get_current_user)):
         authz.require_staff(user)
-        rows = await db.locations.find({}, {"_id": 0}).sort("created_at", 1).to_list(1000)
+        q = {} if include_archived else {"archived": {"$ne": True}}
+        rows = await db.locations.find(q, {"_id": 0}).sort("created_at", 1).to_list(1000)
         return rows
 
     @api_router.post("/admin/locations")
     async def create_location(data: LocationInput, user: dict = Depends(get_current_user)):
         authz.require_global_admin(user)
-        loc = Location(**data.model_dump()).to_mongo()
+        fields = _resolve_location_tz(data)
+        loc = Location(**fields).to_mongo()
         try:
             await db.locations.insert_one(dict(loc))
         except DuplicateKeyError:
@@ -233,9 +260,64 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         loc = await db.locations.find_one({"id": location_id}, {"_id": 0})
         if not loc:
             raise HTTPException(status_code=404, detail="Location not found")
-        upd = {**data.model_dump(), "updated_at": _iso()}
+        upd = {**_resolve_location_tz(data, existing=loc), "updated_at": _iso()}
         await db.locations.update_one({"id": location_id}, {"$set": upd})
         return {**loc, **upd}
+
+    async def _location_dependents(location_id: str):
+        venues = await db.venues.find({"location_id": location_id}, {"_id": 0, "id": 1}).to_list(10000)
+        venue_ids = [v["id"] for v in venues]
+        events = await db.events.count_documents({"location_id": location_id}) if venue_ids else 0
+        if not events and venue_ids:
+            events = await db.events.count_documents({"venue_id": {"$in": venue_ids}})
+        staff = await db.users.count_documents(
+            {"role": {"$in": ["venue_kj", "location_manager"]},
+             "$or": [{"role_scope.location_ids": location_id}, {"role_scope.venue_ids": {"$in": venue_ids}}]}) if True else 0
+        return {"venues": len(venue_ids), "events": events, "staff_assignments": staff}
+
+    @api_router.get("/admin/locations/{location_id}/dependents")
+    async def location_dependents(location_id: str, user: dict = Depends(get_current_user)):
+        authz.require_global_admin(user)
+        if not await db.locations.find_one({"id": location_id}, {"_id": 0}):
+            raise HTTPException(status_code=404, detail="Location not found")
+        deps = await _location_dependents(location_id)
+        return {"location_id": location_id, "dependents": deps,
+                "can_hard_delete": sum(deps.values()) == 0}
+
+    @api_router.delete("/admin/locations/{location_id}")
+    async def delete_location(location_id: str, user: dict = Depends(get_current_user)):
+        """Hard-delete ONLY when the location has zero dependents. If any venues/events/staff
+        reference it, refuse (409) and direct the admin to archive instead — historical data
+        is never cascade-destroyed."""
+        authz.require_global_admin(user)
+        loc = await db.locations.find_one({"id": location_id}, {"_id": 0})
+        if not loc:
+            raise HTTPException(status_code=404, detail="Location not found")
+        deps = await _location_dependents(location_id)
+        if sum(deps.values()) > 0:
+            raise HTTPException(status_code=409, detail={
+                "message": "Location has dependent records and cannot be permanently deleted. Archive it instead to preserve history.",
+                "dependents": deps})
+        await db.locations.delete_one({"id": location_id})
+        return {"deleted": True, "location_id": location_id}
+
+    @api_router.post("/admin/locations/{location_id}/archive")
+    async def archive_location(location_id: str, user: dict = Depends(get_current_user)):
+        authz.require_global_admin(user)
+        loc = await db.locations.find_one({"id": location_id}, {"_id": 0})
+        if not loc:
+            raise HTTPException(status_code=404, detail="Location not found")
+        await db.locations.update_one({"id": location_id}, {"$set": {"archived": True, "active": False, "updated_at": _iso()}})
+        return {"archived": True, "location_id": location_id}
+
+    @api_router.post("/admin/locations/{location_id}/unarchive")
+    async def unarchive_location(location_id: str, user: dict = Depends(get_current_user)):
+        authz.require_global_admin(user)
+        loc = await db.locations.find_one({"id": location_id}, {"_id": 0})
+        if not loc:
+            raise HTTPException(status_code=404, detail="Location not found")
+        await db.locations.update_one({"id": location_id}, {"$set": {"archived": False, "active": True, "updated_at": _iso()}})
+        return {"archived": False, "location_id": location_id}
 
     @api_router.put("/admin/venues/{venue_id}")
     async def update_venue(venue_id: str, data: VenueInput, user: dict = Depends(get_current_user)):
