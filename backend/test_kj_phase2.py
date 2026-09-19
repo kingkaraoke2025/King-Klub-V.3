@@ -45,8 +45,8 @@ r = requests.post(f"{BASE}/events/{EVENT_A}/award-points", headers=H(kj),
                   json={"user_id": c_id, "points": 15, "action_id": "custom_award", "notes": "Custom"})
 check("KJ custom award (+15) in own event", r.status_code == 200, f"{r.status_code} {r.text}")
 life1, ep1, sp1 = snap(c_id)
-check("Event points increased by 25", ep1 - ep0 == 25, f"{ep0}->{ep1}")
-check("Season points increased by 25", sp1 - sp0 == 25, f"{sp0}->{sp1}")
+check("Event points increased by >=25 (base; badges may add bonus)", ep1 - ep0 >= 25, f"{ep0}->{ep1}")
+check("Season points increased by >=25 (base; badges may add bonus)", sp1 - sp0 >= 25, f"{sp0}->{sp1}")
 check("Lifetime (legacy) points UNCHANGED", life1 == life0, f"{life0}->{life1}")
 
 # KJ cannot award in out-of-scope event

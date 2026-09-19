@@ -219,7 +219,7 @@ class ResetBody(BaseModel):
     confirm: bool = False
 
 
-def build_router(db, manager, get_current_user, get_admin_user, event_qr_enabled, get_rank, get_user_rank_name, cfg):
+def build_router(db, manager, get_current_user, get_admin_user, event_qr_enabled, get_rank, get_user_rank_name, cfg, award_badges=None):
     router = APIRouter(prefix="/api")
 
     def _flag():
@@ -265,13 +265,23 @@ def build_router(db, manager, get_current_user, get_admin_user, event_qr_enabled
             await db.season_participation.update_one(
                 {"id": sp["id"]}, {"$push": {"accomplishments": body.action_id}})
 
+        # Evaluate/unlock badges using the EXISTING badge system (event + season scoped).
+        badge_result = {"badges_earned": [], "badge_names": [], "bonus_points": 0}
+        if award_badges is not None and body.action_id:
+            badge_result = await award_badges(body.user_id, body.action_id, ev)
+
         part2 = await db.event_participation.find_one({"user_id": body.user_id, "event_id": event_id}, {"_id": 0})
         await manager.broadcast_event(event_id, {"type": "EVENT_POINTS_AWARDED", "event_id": event_id,
                                                   "user_id": body.user_id,
                                                   "event_points": part2.get("event_points", 0)})
+        # Recompute season points to include any badge bonus.
+        sp_final = await db.season_participation.find_one({"id": sp["id"]}, {"_id": 0})
+        season_points_final = sp_final.get("points") if sp_final else res.get("season_points")
         return {"event_id": event_id, "user_id": body.user_id, "awarded": body.points,
                 "event_points": part2.get("event_points", 0), "season_id": season["id"],
-                "season_points": res.get("season_points"), "season_rank": get_rank(res.get("season_points") or 0)["name"]}
+                "season_points": season_points_final, "season_rank": get_rank(season_points_final or 0)["name"],
+                "badges_earned": badge_result["badges_earned"], "badge_names": badge_result["badge_names"],
+                "bonus_points": badge_result["bonus_points"]}
 
     # -------------------- LEADERBOARDS --------------------
     @router.get("/events/{event_id}/leaderboard")

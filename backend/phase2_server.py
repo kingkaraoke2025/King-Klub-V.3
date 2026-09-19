@@ -113,7 +113,8 @@ class EventStatusInput(BaseModel):
 
 
 def register_phase2(app, api_router, db, manager, get_current_user, get_admin_user,
-                    get_rank, get_user_rank_name, rank_perks, challenge_types=None):
+                    get_rank, get_user_rank_name, rank_perks, challenge_types=None,
+                    award_event_badges=None):
     """Attach all Phase 2 endpoints/routers/hooks. Called from server.py before
     app.include_router(api_router)."""
 
@@ -123,6 +124,12 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
             db, get_rank, SEASON_CFG, user_id=user_id, points=points, source=source,
             dedupe_key=dedupe_key, event=event, to_event=to_event, to_season=to_season,
             to_lifetime=to_lifetime)
+
+    async def award_badges_bound(user_id, action_id, event):
+        """Evaluate/unlock existing badges for a Phase-2 event award (event+season scoped)."""
+        if award_event_badges is None:
+            return {"badges_earned": [], "badge_names": [], "bonus_points": 0}
+        return await award_event_badges(user_id, action_id, event, award_ledger_bound)
 
     def _flag():
         if not EVENT_QR_ENABLED:
@@ -350,7 +357,7 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         get_user_rank_name, rank_perks, award_ledger=award_ledger_bound, song_points=EVENT_SONG_POINTS))
     app.include_router(phase2_seasons.build_router(
         db, manager, get_current_user, get_admin_user, EVENT_QR_ENABLED,
-        get_rank, get_user_rank_name, SEASON_CFG))
+        get_rank, get_user_rank_name, SEASON_CFG, award_badges=award_badges_bound))
     app.include_router(phase2_battles.build_router(
         db, manager, get_current_user, EVENT_QR_ENABLED, challenge_types or {},
         award_ledger=award_ledger_bound))

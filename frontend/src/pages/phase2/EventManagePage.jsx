@@ -151,6 +151,9 @@ const EventManagePage = () => {
     try {
       const r = await p2.awardPoints(eventId, { user_id: awardFor.user_id, points, action_id, notes });
       toast.success(`Awarded ${points} pts to ${awardFor.display_name}` + (r.season_points != null ? ` (season ${r.season_points})` : ''));
+      if (r.badge_names && r.badge_names.length) {
+        toast.success(`🏅 Badge unlocked: ${r.badge_names.join(', ')}${r.bonus_points ? ` (+${r.bonus_points} bonus pts)` : ''}`, { duration: 5000 });
+      }
       setAwardFor(null); setCustomPts(''); loadSingers();
     } catch (e) { toast.error(e.response?.data?.detail || 'Award failed'); }
   };

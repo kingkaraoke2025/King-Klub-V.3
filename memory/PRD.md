@@ -354,3 +354,12 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 - Re-fixed `frontend/.env REACT_APP_BACKEND_URL` (had reverted to stale king-v3-staging → CORS login failure) to the current preview origin.
 - Backend unchanged & re-verified: test_staff_auth 29/29, test_kj_phase2 24/24, focused_verify 22/22. Frontend E2E iteration_13.json 8/8 pass, no bugs.
 - Restored seeded singers (singer1/2, dakota) to role=singer after earlier test drift corrupted singer1 to venue_kj.
+
+---
+
+## Changelog — 2026-06-18 (KJ event awards now unlock badges)
+- **Bug**: KJ Award Points (Phase-2 event endpoint `POST /events/{id}/award-points`) awarded event/season points but never evaluated badges. The old `/admin/award-points` path did (special action badges + `check_and_award_badges` milestones); the Phase-2 path never called that logic.
+- **Fix (server.py)**: refactored badge criteria into pure reusable helpers `_compute_milestone_badges` + `_compute_special_action_badges` (identical ids/names/thresholds/rewards preserved; `check_and_award_badges` now uses them). Added `award_event_badges(user_id, action_id, event, award_ledger)` which mirrors legacy action-stat tracking, unlocks any newly-earned badges via the EXISTING `users.badges` + `accomplishments` model (idempotent, `$addToSet`), and routes badge bonus points to the EVENT + current SEASON only (never legacy lifetime). Wired through `register_phase2` -> `phase2_seasons.build_router(award_badges=...)`; award response now returns `badges_earned`, `badge_names`, `bonus_points`.
+- **Frontend**: KJ award toast surfaces unlocked badges + bonus points.
+- **Note**: The KJ-reported "award failed" was the stale-domain/ingress browser issue (backend award returns 200); resolved by using the king-v3-staging preview URL.
+- **Tests**: new `backend/test_kj_badges.py` 14/14 (unlock, idempotency, milestone, event/season-only attribution, isolation, singer 403, singer-facing display). Regression: test_staff_auth 29/29, test_kj_phase2 24/24, focused_verify 22/22. King kota now correctly holds `random_warrior`.

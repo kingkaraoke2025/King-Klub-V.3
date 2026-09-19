@@ -1566,105 +1566,162 @@ class AwardPointsRequest(BaseModel):
     action_id: str
     notes: Optional[str] = None
 
-async def check_and_award_badges(user_id: str, user_data: dict):
-    """Check if user qualifies for any new badges and award them"""
+def _compute_milestone_badges(user_data: dict):
+    """Pure evaluation of cumulative milestone badges from a user doc. Returns (new_ids, bonus).
+    Preserves the exact existing badge ids / criteria / thresholds / point rewards."""
     badges = list(user_data.get("badges", []))
     new_badges = []
     bonus_points = 0
-    
-    # Get user stats
     stats = user_data.get("action_stats", {})
     songs = user_data.get("songs_performed", 0)
     duets = stats.get("duets", 0)
     friends_brought = stats.get("friends_brought", 0)
     tips = stats.get("tips", 0)
     consecutive = user_data.get("consecutive_visits", 0)
-    
-    # Performance badges
-    if songs >= 1 and "first_song" not in badges:
-        badges.append("first_song")
-        new_badges.append("first_song")
-        bonus_points += BADGES["first_song"]["points_reward"]
-    
-    if songs >= 5 and "five_songs" not in badges:
-        badges.append("five_songs")
-        new_badges.append("five_songs")
-        bonus_points += BADGES["five_songs"]["points_reward"]
-    
-    if songs >= 10 and "ten_songs" not in badges:
-        badges.append("ten_songs")
-        new_badges.append("ten_songs")
-        bonus_points += BADGES["ten_songs"]["points_reward"]
-    
-    if songs >= 20 and "twenty_songs" not in badges:
-        badges.append("twenty_songs")
-        new_badges.append("twenty_songs")
-        bonus_points += BADGES["twenty_songs"]["points_reward"]
-    
-    # Duet badges
-    if duets >= 1 and "duet_singer" not in badges:
-        badges.append("duet_singer")
-        new_badges.append("duet_singer")
-        bonus_points += BADGES["duet_singer"]["points_reward"]
-    
-    if duets >= 5 and "duet_master" not in badges:
-        badges.append("duet_master")
-        new_badges.append("duet_master")
-        bonus_points += BADGES["duet_master"]["points_reward"]
-    
-    # Social badges
-    if friends_brought >= 3 and "social_butterfly" not in badges:
-        badges.append("social_butterfly")
-        new_badges.append("social_butterfly")
-        bonus_points += BADGES["social_butterfly"]["points_reward"]
-    
-    # Loyalty badges
-    if consecutive >= 3 and "night_owl" not in badges:
-        badges.append("night_owl")
-        new_badges.append("night_owl")
-        bonus_points += BADGES["night_owl"]["points_reward"]
-    
-    if consecutive >= 5 and "dedicated_fan" not in badges:
-        badges.append("dedicated_fan")
-        new_badges.append("dedicated_fan")
-        bonus_points += BADGES["dedicated_fan"]["points_reward"]
-    
-    if consecutive >= 10 and "loyal_patron" not in badges:
-        badges.append("loyal_patron")
-        new_badges.append("loyal_patron")
-        bonus_points += BADGES["loyal_patron"]["points_reward"]
-    
-    # Tipper badges (KJ)
-    if tips >= 1 and "generous_tipper" not in badges:
-        badges.append("generous_tipper")
-        new_badges.append("generous_tipper")
-        bonus_points += BADGES["generous_tipper"]["points_reward"]
-    
-    if tips >= 5 and "big_tipper" not in badges:
-        badges.append("big_tipper")
-        new_badges.append("big_tipper")
-        bonus_points += BADGES["big_tipper"]["points_reward"]
-    
-    # Tipper badges (Bartender)
     bartender_tips = stats.get("bartender_tips", 0)
-    if bartender_tips >= 1 and "benevolent_tipper" not in badges:
-        badges.append("benevolent_tipper")
-        new_badges.append("benevolent_tipper")
-        bonus_points += BADGES["benevolent_tipper"]["points_reward"]
-    
-    if bartender_tips >= 5 and "huge_tipper" not in badges:
-        badges.append("huge_tipper")
-        new_badges.append("huge_tipper")
-        bonus_points += BADGES["huge_tipper"]["points_reward"]
-    
+
+    def add(bid):
+        new_badges.append(bid)
+        nonlocal bonus_points
+        bonus_points += BADGES[bid]["points_reward"]
+
+    if songs >= 1 and "first_song" not in badges: add("first_song")
+    if songs >= 5 and "five_songs" not in badges: add("five_songs")
+    if songs >= 10 and "ten_songs" not in badges: add("ten_songs")
+    if songs >= 20 and "twenty_songs" not in badges: add("twenty_songs")
+    if duets >= 1 and "duet_singer" not in badges: add("duet_singer")
+    if duets >= 5 and "duet_master" not in badges: add("duet_master")
+    if friends_brought >= 3 and "social_butterfly" not in badges: add("social_butterfly")
+    if consecutive >= 3 and "night_owl" not in badges: add("night_owl")
+    if consecutive >= 5 and "dedicated_fan" not in badges: add("dedicated_fan")
+    if consecutive >= 10 and "loyal_patron" not in badges: add("loyal_patron")
+    if tips >= 1 and "generous_tipper" not in badges: add("generous_tipper")
+    if tips >= 5 and "big_tipper" not in badges: add("big_tipper")
+    if bartender_tips >= 1 and "benevolent_tipper" not in badges: add("benevolent_tipper")
+    if bartender_tips >= 5 and "huge_tipper" not in badges: add("huge_tipper")
+    return new_badges, bonus_points
+
+
+def _compute_special_action_badges(user_data: dict, action_id: str):
+    """Pure evaluation of immediate action-triggered badges. Returns (new_ids, bonus).
+    Mirrors the legacy /admin/award-points special-badge criteria exactly."""
+    badges = list(user_data.get("badges", []))
+    new_badges = []
+    bonus_points = 0
+    special = {
+        "sing_blindfolded": "blindfolded_master",
+        "random_song": "random_warrior",
+        "bar_song": "bar_song_hero",
+        "tiktok_post": "influencer",
+    }
+    bid = special.get(action_id)
+    if bid and bid not in badges:
+        new_badges.append(bid)
+        bonus_points += BADGES[bid]["points_reward"]
+    stats = user_data.get("action_stats", {})
+    if stats.get("followed_tiktok") and stats.get("followed_facebook") and "super_fan" not in badges:
+        new_badges.append("super_fan")
+        bonus_points += BADGES["super_fan"]["points_reward"]
+    return new_badges, bonus_points
+
+
+# Legacy action-stat tracking for a point action (mirrors /admin/award-points $inc/$set logic).
+def _action_stat_update(action_id: str):
+    inc, setops = {}, {}
+    if action_id in ("sing_song", "sing_duet"):
+        inc["songs_performed"] = 1
+    if action_id == "sing_duet":
+        inc["action_stats.duets"] = 1
+    elif action_id == "bring_friend":
+        inc["action_stats.friends_brought"] = 1
+    elif action_id == "tip_kj":
+        inc["action_stats.tips"] = 1
+    elif action_id == "tip_bartender":
+        inc["action_stats.bartender_tips"] = 1
+    elif action_id == "three_nights":
+        setops["consecutive_visits"] = 3
+    elif action_id == "five_nights":
+        setops["consecutive_visits"] = 5
+    elif action_id == "follow_tiktok":
+        setops["action_stats.followed_tiktok"] = True
+    elif action_id == "follow_facebook":
+        setops["action_stats.followed_facebook"] = True
+    ops = {}
+    if inc:
+        ops["$inc"] = inc
+    if setops:
+        ops["$set"] = setops
+    return ops
+
+
+async def award_event_badges(user_id: str, action_id: str, event: dict, award_ledger):
+    """Phase-2 event/season badge evaluation, reusing the EXISTING badge criteria.
+
+    - Updates the same user action stats the legacy KJ award used (drives milestone badges).
+    - Awards/unlocks any newly-earned badges via the existing `users.badges` + `accomplishments`
+      data model (idempotent — no duplicate badges).
+    - Routes badge bonus points to the EVENT + current SEASON (never legacy lifetime), consistent
+      with the Phase-2 award model.
+    Returns {badges_earned, badge_names, bonus_points}.
+    """
+    if not action_id:
+        return {"badges_earned": [], "badge_names": [], "bonus_points": 0}
+
+    ops = _action_stat_update(action_id)
+    if ops:
+        await db.users.update_one({"id": user_id}, ops)
+
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        return {"badges_earned": [], "badge_names": [], "bonus_points": 0}
+
+    special_new, _ = _compute_special_action_badges(user, action_id)
+    milestone_new, _ = _compute_milestone_badges(user)
+
+    seen = set(user.get("badges", []))
+    all_new = []
+    for bid in special_new + milestone_new:
+        if bid not in seen:
+            all_new.append(bid)
+            seen.add(bid)
+
+    bonus_points = 0
+    if all_new:
+        await db.users.update_one({"id": user_id}, {"$addToSet": {"badges": {"$each": all_new}}})
+        for badge_id in all_new:
+            await db.accomplishments.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "badge_id": badge_id,
+                "badge_name": BADGES[badge_id]["name"],
+                "event_id": event.get("id") if event else None,
+                "earned_at": datetime.now(timezone.utc).isoformat()
+            })
+            reward = BADGES[badge_id]["points_reward"]
+            if reward and award_ledger is not None:
+                res = await award_ledger(user_id=user_id, points=reward, source="badge_reward",
+                                         dedupe_key=f"badge:{badge_id}:{user_id}", event=event,
+                                         to_event=True, to_season=True, to_lifetime=False)
+                if res.get("awarded"):
+                    bonus_points += reward
+
+    return {"badges_earned": all_new, "badge_names": [BADGES[b]["name"] for b in all_new],
+            "bonus_points": bonus_points}
+
+
+async def check_and_award_badges(user_id: str, user_data: dict):
+    """Check if user qualifies for any new badges and award them (legacy lifetime path)."""
+    new_badges, bonus_points = _compute_milestone_badges(user_data)
+
     # Update user badges and add bonus points (only nightly_points if active session)
     if new_badges:
+        badges = list(user_data.get("badges", [])) + new_badges
         active_night = await is_active_night()
         badge_update = {"$set": {"badges": badges}, "$inc": {"points": bonus_points}}
         if active_night:
             badge_update["$inc"]["nightly_points"] = bonus_points
         await db.users.update_one({"id": user_id}, badge_update)
-        
+
         # Record accomplishments
         for badge_id in new_badges:
             await db.accomplishments.insert_one({
@@ -1674,7 +1731,7 @@ async def check_and_award_badges(user_id: str, user_data: dict):
                 "badge_name": BADGES[badge_id]["name"],
                 "earned_at": datetime.now(timezone.utc).isoformat()
             })
-    
+
     return new_badges, bonus_points
 
 @api_router.post("/admin/award-points")
@@ -2742,6 +2799,7 @@ import phase2_server  # noqa: E402
 phase2_server.register_phase2(
     app, api_router, db, manager, get_current_user, get_admin_user,
     get_rank, get_user_rank_name, RANK_PERKS, challenge_types=CHALLENGE_TYPES,
+    award_event_badges=award_event_badges,
 )
 
 # Include router
