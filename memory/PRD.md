@@ -404,7 +404,19 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 
 ---
 
-## Changelog — 2026-06-18 (DEV hardening: probing guard + deterministic seed + deletion audit + styled confirm)
+## Changelog — 2026-06-18 (BUGFIX: singer song not appearing in Venue KJ queue — Case F legacy/Phase2 mismatch)
+**Symptom**: Singer (Jabby) checked into event `2753aec5-…d5b2b` "Test karaoke" (Legacy Venue, KJ King Kota) and added songs successfully, but they never showed in King Kota's KJ Show Console.
+**Root cause (Case F — legacy/Phase 2 queue collection mismatch)**: check-in was correct (Phase 2 `event_checkins` + `event_participation`), but the singer app's Add-Song wrote to the **legacy `db.queue`** collection (via `POST /api/queue`) while the KJ Phase 2 console reads the **Phase 2 `db.event_queue`** (via `GET /api/events/{id}/queue`). Two different collections → KJ saw nothing. Authorization/event-scoping were fine (King Kota's venue scope covers Legacy Venue; both sides used the correct event id).
+**Fix (integration — both sides now use the same Phase 2 event_queue)**:
+- Backend `server.py`: added `GET /api/me/active-event` — resolves the caller's current active-event check-in (reuses `resolve_active_event_checkin`) so the singer app knows which event queue to drive. Legacy `/api/queue*` endpoints left intact (untouched) for the Phase 1 admin console.
+- Frontend `QueuePage.js`: rewired singer queue to the Phase 2 event-scoped endpoints — `GET/POST/DELETE /api/events/{id}/queue`, `/queue/my-status`, `/perk-status`, `/use-perk`. Resolves active event on load; shows "Checked In · {event name}"; add/remove/perk all operate on `event_queue`. Singers pass `authz.require_event_view`.
+- One-time DEV heal: migrated 2 stranded pending legacy `db.queue` rows (belonging to active Phase 2 events) into `event_queue` (idempotent; legacy rows flagged `migrated_to_event_queue`) so previously-lost songs appear.
+**Verified**: Jabby active-event resolves; new song via fixed flow lands in `event_queue`; King Kota's KJ Show Console shows all songs (IN QUEUE=2 + set-current/remove/reorder controls); singer `/queue` shows the same list. Event-scope isolation intact (Event A queue never leaks to Event B). Regression green: kj_venue_event_manage 22, test_kj_delete_ended_event 31, staff_auth 29, kj_phase2 24, focused_verify 22, location_zip 21, kj_badges 14. Production NOT touched.
+Known unrelated: `test_battle_requests` fails at login for `dakota@hotmail.com` (now a real KJ "King Kota", not a singer) — stale test data, not caused by this fix; its 12 battle assertions pass.
+
+---
+
+
 Four targeted hardening improvements around the KJ ended-event permanent delete. **Business rule UNCHANGED** (ended+active KJ = delete-with-history; cancelled/archived = not eligible).
 1. **Non-disclosing delete (anti-probing)** — `DELETE /admin/events/{id}` now loads the event with `db.events.find_one` and returns an identical **403** for unknown / already-deleted / out-of-scope ids (was 404 for missing). A caller can no longer probe which event ids exist. Authorization uses `authz.staff_can_access_event` (server-side venue scope; never trusts client).
 2. **Deterministic seed authorization** — `seed_dev.py` gained `ensure_staff_scope()`: idempotently guarantees canonical DEV staff (`kj@`, `lm@`) keep a valid scope, but **only fills an empty/missing scope** — never clobbers a manually-set assignment. Added `dakota@hotmail.com` as a deterministic seeded singer (had drifted to venue_kj, breaking `test_battle_requests`). Fixes the "KJ Events list goes empty" drift. No production touched.

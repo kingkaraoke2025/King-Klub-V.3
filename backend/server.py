@@ -547,6 +547,24 @@ async def get_queue():
     ).sort("position", 1).to_list(100)
     return queue
 
+@api_router.get("/me/active-event")
+async def get_my_active_event(user: dict = Depends(get_current_user)):
+    """Resolve the caller's CURRENT active-event check-in so the singer app can drive the
+    Phase 2 event-scoped queue (same collection the KJ console reads). Returns null when the
+    user isn't checked into any active event. This is what wires singer add-song and KJ queue
+    onto the same event_queue and prevents the legacy `queue` vs `event_queue` mismatch."""
+    ci = await resolve_active_event_checkin(user)
+    if not ci:
+        return {"active_event": None}
+    ev = await db.events.find_one({"id": ci["event_id"]}, {"_id": 0}) or {}
+    venue = await db.venues.find_one({"id": ev.get("venue_id")}, {"_id": 0, "name": 1}) or {}
+    return {"active_event": {
+        "id": ci["event_id"],
+        "name": ev.get("name"),
+        "venue_name": venue.get("name"),
+        "checked_in_at": ci["timestamp"],
+    }}
+
 @api_router.post("/queue")
 async def add_to_queue(data: AddSongRequest, user: dict = Depends(get_current_user)):
     # Admins are exempt from QR check-in and song limits

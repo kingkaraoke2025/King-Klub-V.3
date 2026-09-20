@@ -20,64 +20,69 @@ const QueuePage = () => {
   const [perkDialogOpen, setPerkDialogOpen] = useState(false);
   const [perkStatus, setPerkStatus] = useState(null);
   const [queueStatus, setQueueStatus] = useState(null);
+  const [activeEvent, setActiveEvent] = useState(null);
   const [usingPerk, setUsingPerk] = useState(false);
   const [songTitle, setSongTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [messageToAdmin, setMessageToAdmin] = useState('');
 
-  const fetchQueue = useCallback(async () => {
+  // Resolve the singer's CURRENT active event so both singer + KJ operate on the SAME
+  // Phase 2 event-scoped queue (event_queue). Without an active event, songs cannot be added.
+  const [eventResolved, setEventResolved] = useState(false);
+  const fetchActiveEvent = useCallback(async () => {
     try {
-      const response = await axios.get(`${API}/queue`);
+      const res = await axios.get(`${API}/me/active-event`);
+      setActiveEvent(res.data.active_event || null);
+      return res.data.active_event || null;
+    } catch (error) {
+      setActiveEvent(null);
+      return null;
+    } finally { setEventResolved(true); }
+  }, []);
+
+  const fetchQueue = useCallback(async (eventId) => {
+    if (!eventId) { setQueue([]); return; }
+    try {
+      const response = await axios.get(`${API}/events/${eventId}/queue`);
       setQueue(response.data);
     } catch (error) {
-      // Only log unexpected errors
-      if (error.response?.status !== 401) {
-        console.error('Failed to fetch queue:', error.message);
-      }
-    } finally {
-      setLoading(false);
+      if (error.response?.status !== 401) console.error('Failed to fetch queue:', error.message);
     }
   }, []);
 
-  const fetchPerkStatus = useCallback(async () => {
+  const fetchPerkStatus = useCallback(async (eventId) => {
+    if (!eventId) { setPerkStatus(null); return; }
     try {
-      const response = await axios.get(`${API}/queue/perk-status`);
+      const response = await axios.get(`${API}/events/${eventId}/perk-status`);
       setPerkStatus(response.data);
     } catch (error) {
-      if (error.response?.status !== 401) {
-        console.error('Failed to fetch perk status:', error.message);
-      }
+      if (error.response?.status !== 401) console.error('Failed to fetch perk status:', error.message);
     }
   }, []);
 
-  const fetchQueueStatus = useCallback(async () => {
+  const fetchQueueStatus = useCallback(async (eventId) => {
+    if (!eventId) { setQueueStatus({ checked_in: false, can_add_songs: false }); return; }
     try {
-      const response = await axios.get(`${API}/queue/my-status`);
+      const response = await axios.get(`${API}/events/${eventId}/queue/my-status`);
       setQueueStatus(response.data);
     } catch (error) {
-      if (error.response?.status !== 401) {
-        console.error('Failed to fetch queue status:', error.message);
-      }
+      if (error.response?.status !== 401) console.error('Failed to fetch queue status:', error.message);
     }
   }, []);
 
+  const refreshAll = useCallback(async () => {
+    const ev = await fetchActiveEvent();
+    const id = ev?.id;
+    await Promise.all([fetchQueue(id), fetchPerkStatus(id), fetchQueueStatus(id)]);
+    setLoading(false);
+  }, [fetchActiveEvent, fetchQueue, fetchPerkStatus, fetchQueueStatus]);
+
   useEffect(() => {
-    fetchQueue();
-    fetchPerkStatus();
-    fetchQueueStatus();
-    
-    // Listen for real-time queue updates via WebSocket
-    const handleQueueUpdate = () => {
-      fetchQueue();
-      fetchQueueStatus();
-    };
-    
+    refreshAll();
+    const handleQueueUpdate = () => { refreshAll(); };
     window.addEventListener('queueUpdated', handleQueueUpdate);
-    
-    return () => {
-      window.removeEventListener('queueUpdated', handleQueueUpdate);
-    };
-  }, [fetchQueue, fetchPerkStatus, fetchQueueStatus]);
+    return () => { window.removeEventListener('queueUpdated', handleQueueUpdate); };
+  }, [refreshAll]);
 
   const handleAddToQueue = async (e) => {
     e.preventDefault();
@@ -85,30 +90,34 @@ const QueuePage = () => {
       toast.error('Please enter both song title and artist');
       return;
     }
+    if (!activeEvent?.id) {
+      toast.error('Check in to an event first to add songs');
+      return;
+    }
 
     setAddingToQueue(true);
     try {
-      const response = await axios.post(`${API}/queue`, {
+      const response = await axios.post(`${API}/events/${activeEvent.id}/queue`, {
         song_title: songTitle,
         artist: artist,
         message_to_admin: messageToAdmin.trim() || null
       });
-      
-      // Show success with songs remaining info
+
       const songsRemaining = response.data.songs_remaining;
       if (songsRemaining > 0) {
         toast.success(`Added to queue! ${songsRemaining} songs remaining this window.`);
       } else {
         toast.success('Added to queue! You\'ve used all 5 songs for this window.');
       }
-      
+
       setSongTitle('');
       setArtist('');
       setMessageToAdmin('');
       setDialogOpen(false);
-      fetchQueue();
-      fetchPerkStatus();
-      fetchQueueStatus(); // Refresh queue status to update songs remaining
+      const id = activeEvent.id;
+      fetchQueue(id);
+      fetchPerkStatus(id);
+      fetchQueueStatus(id);
     } catch (error) {
       const message = error.response?.data?.detail || 'Failed to add to queue';
       toast.error(message);
@@ -118,13 +127,14 @@ const QueuePage = () => {
   };
 
   const handleUsePerk = async () => {
+    if (!activeEvent?.id) return;
     setUsingPerk(true);
     try {
-      const response = await axios.post(`${API}/queue/use-perk`);
+      const response = await axios.post(`${API}/events/${activeEvent.id}/use-perk`);
       toast.success(response.data.message);
       setPerkDialogOpen(false);
-      fetchQueue();
-      fetchPerkStatus();
+      fetchQueue(activeEvent.id);
+      fetchPerkStatus(activeEvent.id);
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to use perk');
     } finally {
@@ -133,11 +143,12 @@ const QueuePage = () => {
   };
 
   const handleRemoveFromQueue = async (itemId) => {
+    if (!activeEvent?.id) return;
     try {
-      await axios.delete(`${API}/queue/${itemId}`);
+      await axios.delete(`${API}/events/${activeEvent.id}/queue/${itemId}`);
       toast.success('Removed from queue');
-      fetchQueue();
-      fetchPerkStatus();
+      fetchQueue(activeEvent.id);
+      fetchPerkStatus(activeEvent.id);
     } catch (error) {
       toast.error('Failed to remove from queue');
     }
@@ -214,7 +225,7 @@ const QueuePage = () => {
                   <CheckCircle2 className="w-5 h-5 text-green-400" />
                 </div>
                 <div>
-                  <p className="text-green-400 font-medium">Checked In</p>
+                  <p className="text-green-400 font-medium" data-testid="active-event-name">Checked In{activeEvent?.name ? ` · ${activeEvent.name}` : ''}</p>
                   <p className="text-white/60 text-sm">
                     {queueStatus.songs_remaining} songs remaining this window
                   </p>
