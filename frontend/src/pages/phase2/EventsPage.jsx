@@ -35,8 +35,12 @@ const EventsPage = () => {
   };
 
   const doDelete = async (ev) => {
-    if (!window.confirm(`Permanently delete event "${ev.name}"? Only works if it has no history.`)) return;
-    try { await p2.deleteEvent(ev.id); toast.success('Event deleted'); load(); }
+    const isEnded = (ev.status || '').toLowerCase() === 'ended';
+    const msg = isEnded
+      ? `Permanently delete the ended show "${ev.name}" and ALL of its history (check-ins, queue, battles, points)? This cannot be undone.`
+      : `Permanently delete event "${ev.name}"? Only works if it has no history.`;
+    if (!window.confirm(msg)) return;
+    try { await p2.deleteEvent(ev.id); toast.success(isEnded ? 'Ended show deleted' : 'Event deleted'); load(); }
     catch (e) {
       const d = e.response?.data?.detail;
       if (e.response?.status === 409 && d) {

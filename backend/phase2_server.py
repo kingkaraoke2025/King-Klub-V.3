@@ -407,12 +407,39 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         deps = await _event_dependents(event_id)
         return {"event_id": event_id, "dependents": deps, "can_hard_delete": sum(deps.values()) == 0}
 
+    # Collections whose rows are EXCLUSIVELY owned by a single event (all carry `event_id`).
+    # Purged when an Ended event is permanently deleted. Season aggregates
+    # (season_participation / seasons) span multiple events and are intentionally NOT touched.
+    _EVENT_OWNED_COLLECTIONS = [
+        "event_queue", "event_challenge_votes", "event_challenges",
+        "event_perk_usage", "perk_usage", "event_participation",
+        "event_checkins", "event_checkin_attempts",
+        "season_accomplishments", "point_ledger",
+    ]
+
+    async def _purge_event_owned_data(event_id: str):
+        """Delete all event-owned dependent rows FIRST, then the event document LAST.
+        Standalone Mongo has no multi-document transactions, so this ordering is the safety
+        guarantee: a mid-operation failure can never leave records orphaned (pointing at a
+        deleted event) — worst case some children remain WITH the parent, which is retryable."""
+        for coll in _EVENT_OWNED_COLLECTIONS:
+            await db[coll].delete_many({"event_id": event_id})
+        await db.events.delete_one({"id": event_id})
+
     @api_router.delete("/admin/events/{event_id}")
     async def delete_event(event_id: str, user: dict = Depends(get_current_user)):
-        """Authorized event staff may hard-delete ONLY an event with zero dependent records
-        (participation/queue/battles/perks/points); otherwise 409 -> archive to preserve history."""
+        """DEFINITIVE RULE — an active, server-authorized event staff member (incl. venue_kj
+        assigned to the event's venue) may PERMANENTLY delete an event whose status is `ended`,
+        even when it holds historical data (check-ins, queue, battles, results, perks, points,
+        QR records). All event-owned records are purged. For every OTHER status the legacy
+        protection stands: hard-delete only when there are zero dependents, else 409 -> archive.
+        Archived events (even if previously ended) stay on the archive/restore workflow."""
         ev = await _get_event(event_id)
-        authz.require_event_staff(user, ev)
+        authz.require_event_staff(user, ev)  # server-side venue-scope check; never trusts client
+        status = (ev.get("status") or "").lower()
+        if status == "ended":
+            await _purge_event_owned_data(event_id)
+            return {"deleted": True, "event_id": event_id, "purged_history": True}
         deps = await _event_dependents(event_id)
         if sum(deps.values()) > 0:
             raise HTTPException(status_code=409, detail={
