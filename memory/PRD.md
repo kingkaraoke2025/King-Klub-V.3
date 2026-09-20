@@ -404,7 +404,18 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 
 ---
 
-## Changelog — 2026-06-18 (Award Points dialog: per-submission idempotency / double-click protection)
+## Changelog — 2026-06-18 (FRONTEND FIX: Leaderboard page blank — retired /tonight aborted the fetch)
+**Root cause (Category D, frontend):** `LeaderboardPage.js` fetched `/api/leaderboard` and the retired `/api/leaderboard/tonight` inside one `Promise.all`. The retired endpoint now returns **403**, which rejected the whole `Promise.all` → the `catch` ran → `setAllTimeLeaderboard(...)` never executed → the ENTIRE page rendered empty even though `/api/leaderboard` returned Jabby correctly. Default tab was also the retired "Tonight". Backend data + queries were all correct (Jabby present in event/season/all-time responses).
+**Fix (frontend only, `LeaderboardPage.js`):** removed all use of `/api/leaderboard/tonight`. Three tabs now backed by current Phase 2 sources, each fetched INDEPENDENTLY via `Promise.allSettled` (one failure can't blank the others; each shows its own error card + Retry):
+- **Season** (new default) → `GET /api/seasons/current/leaderboard` (season_points, current season).
+- **Event** → `GET /api/me/active-event` then `GET /api/events/{id}/leaderboard` (event_points; "No Active Event" state when not checked in).
+- **All-Time** → `GET /api/leaderboard` (lifetime users.points).
+Entries normalized into one shape; scoping unchanged (no cross-event/season leak, no extra venue/location filter, backend auth intact). No backend/point-rule changes.
+**Verified (Jabby DEV data):** Season Jabby **#4 / 560** (matches season_participation.points 560); All-Time Jabby **#2 / 590** (matches users.points 590); Event Jabby present (event_points 540); Blindfold badge/points intact; King Kota's KJ-console event leaderboard returns Jabby (backend 200). UI screenshots confirm all three tabs render with Jabby + "You" highlight + correct ranks. Regression green: manual_award_lifetime 19, event_song_points 11, kj_badges 14, kj_phase2 24, focused_verify 22, staff_auth 29, kj_venue_event_manage 22, kj_delete_ended_event 31, location_zip 21. No realtime work; DEV/staging only; no production deploy.
+
+---
+
+
 **Change (`EventManagePage.jsx`, frontend only)**: hardened the KJ Award Points dialog against accidental double-submits.
 - `openAward(singer)` mints a fresh idempotency key (`crypto.randomUUID()`) each time the dialog opens.
 - `doAward` sends `dedupe_key = kjaward:{sessionKey}:{action_id}:{points}` and is guarded by an `awarding` in-flight flag; action buttons + custom Award button are `disabled` while a request is pending (custom button shows "Awarding…").
