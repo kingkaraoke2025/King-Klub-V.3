@@ -62,6 +62,8 @@ export const p2 = {
   listStaff: () => axios.get(`${API}/admin/staff`).then((r) => r.data),
   adminUsers: () => axios.get(`${API}/admin/users`).then((r) => r.data),
   setStaff: (userId, body) => axios.put(`${API}/admin/users/${userId}/staff`, body).then((r) => r.data),
+  // Permanent-deletion audit trail (read-only; scoped server-side)
+  eventDeletions: () => axios.get(`${API}/admin/event-deletions`).then((r) => r.data),
 };
 
 export const qrImage = (url) =>

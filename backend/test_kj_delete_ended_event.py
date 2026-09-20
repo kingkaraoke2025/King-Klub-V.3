@@ -52,6 +52,20 @@ check("All event-owned history purged", owned_count(ev) == 0, f"remaining={owned
 # ensure we didn't nuke venue/location/users
 check("Venue NOT deleted", db.venues.count_documents({"id": VENUE_A}) == 1)
 
+# --- 1b. AUDIT record was written BEFORE purge and survives the deletion ---
+aud = db.event_deletion_audit.find_one({"event_id": ev}, {"_id": 0})
+check("Audit record created for deleted ended event", aud is not None)
+if aud:
+    check("Audit has actor id + name", bool(aud.get("actor_user_id")) and "actor_display_name" in aud)
+    check("Audit has event/venue/location identity", aud.get("event_name") and aud.get("venue_id") == VENUE_A and "venue_name" in aud and "location_name" in aud)
+    check("Audit action = permanent_delete_ended_event", aud.get("action") == "permanent_delete_ended_event")
+    check("Audit stores NO detailed history rows", not any(k in aud for k in ("participants_list", "queue", "battles", "votes", "singers")))
+
+# --- 1c. Probing: unknown / already-deleted id -> non-disclosing 403 (not 404) ---
+check("Delete already-deleted ended id -> 403", requests.delete(f"{BASE}/admin/events/{ev}", headers=H(kj)).status_code == 403)
+check("Delete nonexistent id -> 403", requests.delete(f"{BASE}/admin/events/{uuid.uuid4()}", headers=H(kj)).status_code == 403)
+
+
 # --- 2. Non-ended (scheduled) event WITH history stays protected (409) ---
 ev2 = make_event("scheduled")
 seed_history(ev2)
@@ -89,6 +103,22 @@ kj = login("kj@kingkaraoke2025.com", "Kj!2026")
 # now authorized active KJ cleans up ev4 (ended)
 r = requests.delete(f"{BASE}/admin/events/{ev4}", headers=H(kj))
 check("Re-activated KJ deletes ended ev4 -> 200", r.status_code == 200, f"{r.status_code}")
+
+# --- 5. AUDIT trail endpoint: scoping + security ---
+# KJ sees own-venue deletions (ev + ev4 were at VENUE_A)
+kj_aud = requests.get(f"{BASE}/admin/event-deletions", headers=H(kj))
+check("KJ can read audit endpoint -> 200", kj_aud.status_code == 200)
+kj_rows = kj_aud.json().get("deletions", []) if kj_aud.status_code == 200 else []
+check("KJ audit shows own-venue deletion(s)", any(x["event_id"] == ev for x in kj_rows))
+check("KJ audit rows all within KJ venue scope", all(x.get("venue_id") == VENUE_A for x in kj_rows), str([x.get('venue_id') for x in kj_rows])[:160])
+# Admin sees everything (>= KJ count)
+adm_aud = requests.get(f"{BASE}/admin/event-deletions", headers=H(admin))
+check("Admin can read audit endpoint -> 200", adm_aud.status_code == 200)
+check("Admin audit count >= KJ audit count", len(adm_aud.json().get("deletions", [])) >= len(kj_rows))
+# Singer denied
+check("Singer cannot read audit endpoint -> 403", requests.get(f"{BASE}/admin/event-deletions", headers=H(singer)).status_code == 403)
+# Audit is immutable via API (no PUT/DELETE routes) -> DELETE on the collection path 405/404
+check("No audit mutation route (DELETE) -> 404/405", requests.delete(f"{BASE}/admin/event-deletions", headers=H(kj)).status_code in (404, 405))
 
 # cleanup seeded rows / leftover events
 for e in (ev2, ev3):

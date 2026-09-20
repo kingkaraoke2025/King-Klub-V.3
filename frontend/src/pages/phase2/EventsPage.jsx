@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { CalendarDays, Plus, Settings, Pencil, Trash2, Archive, ArchiveRestore } from 'lucide-react';
+import { CalendarDays, Plus, Settings, Pencil, Trash2, Archive, ArchiveRestore, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Phase2Shell, StatusBadge } from '@/components/Phase2Shell';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { p2 } from '@/lib/phase2Api';
 
 const STATUSES = ['draft', 'scheduled', 'active', 'ended', 'cancelled', 'archived'];
@@ -15,6 +19,7 @@ const EventsPage = () => {
   const [venue, setVenue] = useState(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(null);
+  const [endedTarget, setEndedTarget] = useState(null);
 
   const load = async () => {
     try {
@@ -34,13 +39,10 @@ const EventsPage = () => {
     } catch (e) { toast.error(e.response?.data?.detail || 'Save failed'); }
   };
 
+  // Non-ended events keep the legacy confirm + 409->archive fallback.
   const doDelete = async (ev) => {
-    const isEnded = (ev.status || '').toLowerCase() === 'ended';
-    const msg = isEnded
-      ? `Permanently delete the ended show "${ev.name}" and ALL of its history (check-ins, queue, battles, points)? This cannot be undone.`
-      : `Permanently delete event "${ev.name}"? Only works if it has no history.`;
-    if (!window.confirm(msg)) return;
-    try { await p2.deleteEvent(ev.id); toast.success(isEnded ? 'Ended show deleted' : 'Event deleted'); load(); }
+    if (!window.confirm(`Permanently delete event "${ev.name}"? Only works if it has no history.`)) return;
+    try { await p2.deleteEvent(ev.id); toast.success('Event deleted'); load(); }
     catch (e) {
       const d = e.response?.data?.detail;
       if (e.response?.status === 409 && d) {
@@ -51,6 +53,22 @@ const EventsPage = () => {
       } else { toast.error(typeof d === 'string' ? d : 'Delete failed'); }
     }
   };
+
+  // Ended events use the explicit styled AlertDialog permanent-delete confirmation.
+  const onDeleteClick = (ev) => {
+    if ((ev.status || '').toLowerCase() === 'ended') setEndedTarget(ev);
+    else doDelete(ev);
+  };
+  const confirmEndedDelete = async () => {
+    const ev = endedTarget;
+    setEndedTarget(null);
+    try { await p2.deleteEvent(ev.id); toast.success('Ended show permanently deleted'); load(); }
+    catch (e) {
+      const d = e.response?.data?.detail;
+      toast.error(typeof d === 'string' ? d : 'Delete failed');
+    }
+  };
+
   const toggleArchive = async (ev) => {
     try { await (ev.status === 'archived' ? p2.unarchiveEvent(ev.id) : p2.archiveEvent(ev.id)); toast.success(ev.status === 'archived' ? 'Event restored' : 'Event archived'); load(); }
     catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
@@ -109,7 +127,7 @@ const EventsPage = () => {
                   <StatusBadge status={ev.status} />
                   <button data-testid={`edit-event-${ev.id}`} onClick={() => setForm({ ...ev })} className="text-white/40 hover:text-gold p-1" title="Edit"><Pencil className="w-4 h-4" /></button>
                   <button data-testid={`archive-event-${ev.id}`} onClick={() => toggleArchive(ev)} className="text-white/40 hover:text-blue-300 p-1" title={ev.status === 'archived' ? 'Restore' : 'Archive'}>{ev.status === 'archived' ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}</button>
-                  <button data-testid={`delete-event-${ev.id}`} onClick={() => doDelete(ev)} className="text-white/40 hover:text-red-400 p-1" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                  <button data-testid={`delete-event-${ev.id}`} onClick={() => onDeleteClick(ev)} className="text-white/40 hover:text-red-400 p-1" title="Delete"><Trash2 className="w-4 h-4" /></button>
                 </div>
               </div>
               <h3 className="font-cinzel text-xl text-white mt-3">{ev.name}</h3>
@@ -122,6 +140,38 @@ const EventsPage = () => {
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!endedTarget} onOpenChange={(o) => { if (!o) setEndedTarget(null); }}>
+        <AlertDialogContent data-testid="delete-ended-dialog" className="bg-[#1A0B2E] border border-red-500/40 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-cinzel text-2xl text-red-400 flex items-center gap-2">
+              <AlertTriangle className="w-6 h-6" /> Delete Ended Event Permanently?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-white/70 space-y-3 pt-2">
+              <span className="block">
+                You are about to permanently delete the ended show
+                <span className="text-gold font-semibold"> "{endedTarget?.name}"</span>.
+              </span>
+              <span className="block">This will:</span>
+              <span className="block text-white/80">
+                • Permanently delete the event<br />
+                • Permanently delete ALL of its event-specific history — check-ins, queue,
+                battles, votes, perks and points<br />
+                • This action <span className="text-red-300 font-semibold">cannot be undone</span>
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="delete-ended-cancel" className="bg-transparent border-white/20 text-white/80 hover:bg-white/10">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction data-testid="delete-ended-confirm" onClick={confirmEndedDelete}
+              className="bg-red-600 hover:bg-red-700 text-white">
+              Yes, permanently delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Phase2Shell>
   );
 };

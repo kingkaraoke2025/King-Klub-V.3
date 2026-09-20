@@ -24,6 +24,10 @@ export const Phase2Shell = ({ title, subtitle, crumbs = [], back, actions, child
                   className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
                   Staff
                 </button>
+                <button onClick={() => navigate('/admin/phase2/deletions')} data-testid="phase2-deletions-btn"
+                  className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
+                  Deletion Log
+                </button>
                 <button onClick={() => navigate('/admin')} data-testid="phase2-exit-btn"
                   className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
                   Phase 1 Admin
@@ -38,6 +42,10 @@ export const Phase2Shell = ({ title, subtitle, crumbs = [], back, actions, child
                 <button onClick={() => navigate('/admin/phase2')} data-testid="phase2-locations-btn"
                   className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
                   Venues
+                </button>
+                <button onClick={() => navigate('/admin/phase2/deletions')} data-testid="phase2-deletions-btn"
+                  className="text-sm text-white/70 hover:text-gold transition-colors px-3 py-1.5 rounded-lg">
+                  Deletion Log
                 </button>
               </>
             )}

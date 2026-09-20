@@ -426,6 +426,30 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
             await db[coll].delete_many({"event_id": event_id})
         await db.events.delete_one({"id": event_id})
 
+    async def _write_deletion_audit(user: dict, ev: dict, purged_counts: dict):
+        """Persist a minimal, immutable audit record for a permanent event deletion BEFORE the
+        purge, so it survives the event being destroyed. Stores only traceability metadata
+        (actor + event/venue/location identity + timestamp + aggregate counts) — never the
+        event's detailed history (no participation rows, queue, battles, votes, points, PII)."""
+        venue = await db.venues.find_one({"id": ev.get("venue_id")}, {"_id": 0, "name": 1}) or {}
+        loc = await db.locations.find_one({"id": ev.get("location_id")}, {"_id": 0, "name": 1}) or {}
+        await db.event_deletion_audit.insert_one({
+            "id": str(uuid.uuid4()),
+            "action": "permanent_delete_ended_event",
+            "actor_user_id": user.get("id"),
+            "actor_display_name": user.get("display_name"),
+            "actor_role": authz.roles.resolve_role(user),
+            "event_id": ev.get("id"),
+            "event_name": ev.get("name"),
+            "event_status": ev.get("status"),
+            "venue_id": ev.get("venue_id"),
+            "venue_name": venue.get("name"),
+            "location_id": ev.get("location_id"),
+            "location_name": loc.get("name"),
+            "purged_counts": purged_counts,   # aggregate numbers only, not detailed history
+            "deleted_at": _iso(),
+        })
+
     @api_router.delete("/admin/events/{event_id}")
     async def delete_event(event_id: str, user: dict = Depends(get_current_user)):
         """DEFINITIVE RULE — an active, server-authorized event staff member (incl. venue_kj
@@ -433,11 +457,17 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         even when it holds historical data (check-ins, queue, battles, results, perks, points,
         QR records). All event-owned records are purged. For every OTHER status the legacy
         protection stands: hard-delete only when there are zero dependents, else 409 -> archive.
-        Archived events (even if previously ended) stay on the archive/restore workflow."""
-        ev = await _get_event(event_id)
-        authz.require_event_staff(user, ev)  # server-side venue-scope check; never trusts client
+        Archived events (even if previously ended) stay on the archive/restore workflow.
+
+        Non-disclosing: an unknown / already-deleted / out-of-scope event id all return an
+        identical 403 so a caller can never probe which event ids exist."""
+        ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+        if not ev or not authz.staff_can_access_event(user, ev):
+            raise HTTPException(status_code=403, detail="Not authorized for this event")
         status = (ev.get("status") or "").lower()
         if status == "ended":
+            counts = await _event_dependents(event_id)
+            await _write_deletion_audit(user, ev, counts)  # audit BEFORE purge so it survives
             await _purge_event_owned_data(event_id)
             return {"deleted": True, "event_id": event_id, "purged_history": True}
         deps = await _event_dependents(event_id)
@@ -447,6 +477,25 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
                 "dependents": deps})
         await db.events.delete_one({"id": event_id})
         return {"deleted": True, "event_id": event_id}
+
+    @api_router.get("/admin/event-deletions")
+    async def list_event_deletions(user: dict = Depends(get_current_user)):
+        """Read-only permanent-deletion audit trail. global_admin sees all; an ACTIVE
+        location_manager / venue_kj sees only records within their authorized scope; singers
+        and deactivated staff are denied. No mutation endpoints exist -> records are immutable."""
+        authz.require_staff(user)
+        role = authz.roles.resolve_role(user)
+        q = {}
+        if role != authz.roles.ROLE_GLOBAL_ADMIN:
+            sc = authz.roles.get_role_scope(user)
+            if role == authz.roles.ROLE_LOCATION_MANAGER:
+                q = {"location_id": {"$in": sc["location_ids"]}}
+            elif role == authz.roles.ROLE_VENUE_KJ:
+                q = {"venue_id": {"$in": sc["venue_ids"]}}
+            else:
+                q = {"id": {"$in": []}}
+        rows = await db.event_deletion_audit.find(q, {"_id": 0}).sort("deleted_at", -1).to_list(2000)
+        return {"count": len(rows), "deletions": rows}
 
     @api_router.post("/admin/events/{event_id}/archive")
     async def archive_event(event_id: str, user: dict = Depends(get_current_user)):
