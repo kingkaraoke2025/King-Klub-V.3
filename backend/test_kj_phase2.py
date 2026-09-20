@@ -47,7 +47,8 @@ check("KJ custom award (+15) in own event", r.status_code == 200, f"{r.status_co
 life1, ep1, sp1 = snap(c_id)
 check("Event points increased by >=25 (base; badges may add bonus)", ep1 - ep0 >= 25, f"{ep0}->{ep1}")
 check("Season points increased by >=25 (base; badges may add bonus)", sp1 - sp0 >= 25, f"{sp0}->{sp1}")
-check("Lifetime (legacy) points UNCHANGED", life1 == life0, f"{life0}->{life1}")
+check("Lifetime mirrors manual award (legacy parity): lifetime==event==season delta, >=25",
+      (life1 - life0) == (ep1 - ep0) == (sp1 - sp0) and (life1 - life0) >= 25, f"L{life1-life0} E{ep1-ep0} S{sp1-sp0}")
 
 # KJ cannot award in out-of-scope event
 r = requests.post(f"{BASE}/events/{EVENT_B}/award-points", headers=H(kj),

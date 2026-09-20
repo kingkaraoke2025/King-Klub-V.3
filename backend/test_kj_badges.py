@@ -41,7 +41,8 @@ check("random_warrior badge now on user", "random_warrior" in u1["badges"], str(
 if not had_rw:
     check("Response reports badge earned", "random_warrior" in body.get("badges_earned", []), str(body))
     check("Accomplishment recorded", acc1 == acc0 + 1, f"{acc0}->{acc1}")
-check("Lifetime points UNCHANGED by event badge award", u1["points"] == life0, f"{life0}->{u1['points']}")
+check("Lifetime points mirror manual award (legacy parity: action +200, +200 badge if first-time)",
+      u1["points"] == life0 + 200 + (0 if had_rw else 200), f"{life0}->{u1['points']} had_rw={had_rw}")
 
 # --- Idempotency: repeat random_song -> no duplicate badge ---
 r2 = requests.post(f"{BASE}/events/{E_A}/award-points", headers=H(kj),
@@ -68,7 +69,7 @@ check("Award sing_song 200", r3.status_code == 200, f"{r3.status_code} {r3.text}
 nu1, _ = asyncio.get_event_loop().run_until_complete(dbget(nuid))
 check("songs_performed incremented", nu1["songs_performed"] == nu0["songs_performed"] + 1, f"{nu0['songs_performed']}->{nu1['songs_performed']}")
 check("first_song milestone badge unlocked", "first_song" in nu1["badges"], str(nu1["badges"]))
-check("Base+badge points did NOT hit lifetime (only +10 check-in bonus)", nu1["points"] == 10, str(nu1["points"]))
+check("Lifetime mirrors legacy: +10 check-in, +10 sing_song, +10 first_song badge = 30", nu1["points"] == 30, str(nu1["points"]))
 
 # --- Singer-facing badge display still works (GET badges/me) ---
 bm = requests.get(f"{BASE}/auth/me", headers=H(ntok))

@@ -270,6 +270,17 @@ def build_router(db, manager, get_current_user, get_admin_user, event_qr_enabled
         if award_badges is not None and body.action_id:
             badge_result = await award_badges(body.user_id, body.action_id, ev)
 
+        # LEGACY PARITY: a manual KJ award historically also increased the singer's lifetime
+        # users.points by the action value PLUS any first-time badge bonus. Mirror that here,
+        # exactly ONCE per manual award. Idempotency is anchored to THIS award's dedupe key
+        # (lifetime_manual:{dedupe}); a duplicate dedupe_key 409s above before reaching here, so
+        # lifetime can never double-count, while a genuinely separate award (new dedupe) re-awards.
+        lifetime_delta = body.points + badge_result.get("bonus_points", 0)
+        if lifetime_delta:
+            await award_ledger(db, get_rank, cfg, user_id=body.user_id, points=lifetime_delta,
+                               source="lifetime_manual", dedupe_key=f"lifetime_manual:{dedupe}",
+                               event=ev, to_event=False, to_season=False, to_lifetime=True)
+
         part2 = await db.event_participation.find_one({"user_id": body.user_id, "event_id": event_id}, {"_id": 0})
         await manager.broadcast_event(event_id, {"type": "EVENT_POINTS_AWARDED", "event_id": event_id,
                                                   "user_id": body.user_id,
