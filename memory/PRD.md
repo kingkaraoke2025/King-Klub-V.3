@@ -382,3 +382,13 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 - Frontend LocationsPage: ZIP field with debounced live timezone preview (read-only, green check / red warning), edit/archive/delete controls, archived badge + restore. Save blocked if ZIP present but tz unresolved.
 - Deps frozen: pgeocode==0.5.0, timezonefinder==9.0.0.
 - Tests: `backend/test_location_zip.py` 21/21 (ZIP->IANA for 4 zones, invalid/unknown rejected, create/edit recalcs, no-ZIP still works, KJ/singer 403, no-dep hard delete, dep 409, archive/unarchive preserves venues). Regression: staff_auth 29, focused 22, kj_phase2 24.
+
+---
+
+## Changelog — 2026-06-18 (Venue KJ venue/event manage + safe delete/archive)
+- **Permission change**: active venue_kj can now manage (view/edit/archive/restore/delete-when-safe) Venues in their authorized scope and Events belonging to those venues. Location deletion permissions UNCHANGED (global_admin only). No global-admin/staff-grant/role powers granted to KJ.
+- authz.py: added `can_access_venue` / `require_venue_staff` (global_admin | in-scope location_manager | in-scope active venue_kj). `update_venue` switched from require_location_staff -> require_venue_staff. Venue create stays admin/LM-only.
+- Venue endpoints: `GET /admin/venues/{id}/dependents`, `DELETE /admin/venues/{id}` (hard-delete only when zero events + zero OTHER staff assignments; acting users own scope excluded & pulled on delete; else 409), `POST .../archive` + `.../unarchive`. Venue model +`archived`.
+- Event endpoints: `GET /admin/events/{id}/dependents`, `DELETE /admin/events/{id}` (hard-delete only when zero participants/queue/battles/perks/points; else 409), `POST .../archive` (status->archived, remembers prev_status) + `.../unarchive`. All require_event_staff (event->venue->KJ verified server-side).
+- Frontend: VenuesPage + EventsPage now show edit/archive/delete controls for authorized staff (incl. KJ) with 409->archive fallback + archived badges; venue create button limited to admin/LM.
+- Tests: `backend/test_kj_venue_event_manage.py` 22/22 (edit own venue, cross-venue/event 403, location delete still 403, dep 409, archive/unarchive, empty hard-delete, create+delete own event, singer/inactive-KJ 403). Regression: staff_auth 29, focused 22, kj_phase2 24, location_zip 21.

@@ -73,6 +73,29 @@ def require_event_view(user: dict, event: dict) -> None:
     require_event_staff(user, event)
 
 
+def can_access_venue(user: dict, venue: dict) -> bool:
+    """True iff the user may MANAGE this venue (view/edit/archive/delete).
+    global_admin -> any; ACTIVE location_manager -> venue.location_id in scope;
+    ACTIVE venue_kj -> venue.id in scope. Deactivated staff / singers -> False."""
+    role = roles.resolve_role(user)
+    if role == roles.ROLE_GLOBAL_ADMIN:
+        return True
+    if not staff_authorized(user):
+        return False
+    sc = _scope(user)
+    if role == roles.ROLE_LOCATION_MANAGER:
+        return venue.get("location_id") in sc["location_ids"]
+    if role == roles.ROLE_VENUE_KJ:
+        return venue.get("id") in sc["venue_ids"]
+    return False
+
+
+def require_venue_staff(user: dict, venue: dict) -> None:
+    """Manage a venue: global_admin, the location's manager, or the venue's KJ (all scope-checked)."""
+    if not can_access_venue(user, venue):
+        raise HTTPException(status_code=403, detail="Not authorized for this venue")
+
+
 def require_global_admin(user: dict) -> None:
     """Platform-wide staff action (season list/reset). Only global_admin."""
     if roles.resolve_role(user) != roles.ROLE_GLOBAL_ADMIN:

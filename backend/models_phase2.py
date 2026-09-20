@@ -102,6 +102,7 @@ class Venue(BaseDoc):
     address: Optional[str] = None
     timezone: Optional[str] = None  # None => inherit from location
     active: bool = True
+    archived: bool = False  # soft-delete when dependent data exists
     is_sample: bool = False
     is_default_legacy: bool = False
     env: str = "production"

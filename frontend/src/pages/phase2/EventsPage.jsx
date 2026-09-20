@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { CalendarDays, Plus, Settings, Pencil } from 'lucide-react';
+import { CalendarDays, Plus, Settings, Pencil, Trash2, Archive, ArchiveRestore } from 'lucide-react';
 import { toast } from 'sonner';
 import { Phase2Shell, StatusBadge } from '@/components/Phase2Shell';
 import { p2 } from '@/lib/phase2Api';
@@ -32,6 +32,24 @@ const EventsPage = () => {
       else { await p2.createEvent({ ...form, venue_id: venueId }); toast.success('Event created'); }
       setForm(null); load();
     } catch (e) { toast.error(e.response?.data?.detail || 'Save failed'); }
+  };
+
+  const doDelete = async (ev) => {
+    if (!window.confirm(`Permanently delete event "${ev.name}"? Only works if it has no history.`)) return;
+    try { await p2.deleteEvent(ev.id); toast.success('Event deleted'); load(); }
+    catch (e) {
+      const d = e.response?.data?.detail;
+      if (e.response?.status === 409 && d) {
+        const dep = d.dependents || {};
+        if (window.confirm(`Cannot delete — ${dep.participants} participant(s), ${dep.queue_items} queue, ${dep.battles} battle(s), ${dep.point_history} point record(s). Archive instead to preserve history?`)) {
+          try { await p2.archiveEvent(ev.id); toast.success('Event archived'); load(); } catch (er) { toast.error('Archive failed'); }
+        }
+      } else { toast.error(typeof d === 'string' ? d : 'Delete failed'); }
+    }
+  };
+  const toggleArchive = async (ev) => {
+    try { await (ev.status === 'archived' ? p2.unarchiveEvent(ev.id) : p2.archiveEvent(ev.id)); toast.success(ev.status === 'archived' ? 'Event restored' : 'Event archived'); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
   };
 
   return (
@@ -83,9 +101,11 @@ const EventsPage = () => {
             <div key={ev.id} data-testid={`event-card-${ev.id}`} className="glass-card p-5 border border-white/10 hover:border-gold/40 transition">
               <div className="flex items-start justify-between">
                 <CalendarDays className="w-6 h-6 text-gold" />
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <StatusBadge status={ev.status} />
-                  <button data-testid={`edit-event-${ev.id}`} onClick={() => setForm({ ...ev })} className="text-white/40 hover:text-gold"><Pencil className="w-4 h-4" /></button>
+                  <button data-testid={`edit-event-${ev.id}`} onClick={() => setForm({ ...ev })} className="text-white/40 hover:text-gold p-1" title="Edit"><Pencil className="w-4 h-4" /></button>
+                  <button data-testid={`archive-event-${ev.id}`} onClick={() => toggleArchive(ev)} className="text-white/40 hover:text-blue-300 p-1" title={ev.status === 'archived' ? 'Restore' : 'Archive'}>{ev.status === 'archived' ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}</button>
+                  <button data-testid={`delete-event-${ev.id}`} onClick={() => doDelete(ev)} className="text-white/40 hover:text-red-400 p-1" title="Delete"><Trash2 className="w-4 h-4" /></button>
                 </div>
               </div>
               <h3 className="font-cinzel text-xl text-white mt-3">{ev.name}</h3>

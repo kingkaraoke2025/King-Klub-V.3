@@ -324,10 +324,63 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         venue = await db.venues.find_one({"id": venue_id}, {"_id": 0})
         if not venue:
             raise HTTPException(status_code=404, detail="Venue not found")
-        authz.require_location_staff(user, venue["location_id"])
+        authz.require_venue_staff(user, venue)
         upd = {"name": data.name, "address": data.address, "timezone": data.timezone, "updated_at": _iso()}
         await db.venues.update_one({"id": venue_id}, {"$set": upd})
         return {**venue, **upd}
+
+    async def _venue_dependents(venue_id: str, exclude_user_id: str = None):
+        events = await db.events.count_documents({"venue_id": venue_id})
+        staff_q = {"role": {"$in": ["venue_kj", "location_manager"]}, "role_scope.venue_ids": venue_id}
+        if exclude_user_id:
+            staff_q["id"] = {"$ne": exclude_user_id}
+        staff = await db.users.count_documents(staff_q)
+        return {"events": events, "staff_assignments": staff}
+
+    @api_router.get("/admin/venues/{venue_id}/dependents")
+    async def venue_dependents(venue_id: str, user: dict = Depends(get_current_user)):
+        venue = await db.venues.find_one({"id": venue_id}, {"_id": 0})
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        authz.require_venue_staff(user, venue)
+        deps = await _venue_dependents(venue_id, exclude_user_id=user["id"])
+        return {"venue_id": venue_id, "dependents": deps, "can_hard_delete": sum(deps.values()) == 0}
+
+    @api_router.delete("/admin/venues/{venue_id}")
+    async def delete_venue(venue_id: str, user: dict = Depends(get_current_user)):
+        """Authorized venue staff may hard-delete ONLY a venue with zero dependents (events, OTHER
+        staff assignments); otherwise 409 -> archive. Never cascade-deletes historical records."""
+        venue = await db.venues.find_one({"id": venue_id}, {"_id": 0})
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        authz.require_venue_staff(user, venue)
+        deps = await _venue_dependents(venue_id, exclude_user_id=user["id"])
+        if sum(deps.values()) > 0:
+            raise HTTPException(status_code=409, detail={
+                "message": "Venue has dependent records and cannot be permanently deleted. Archive it instead to preserve history.",
+                "dependents": deps})
+        await db.venues.delete_one({"id": venue_id})
+        # Clean up the acting user's own now-dangling scope reference (their own assignment only).
+        await db.users.update_one({"id": user["id"]}, {"$pull": {"role_scope.venue_ids": venue_id}})
+        return {"deleted": True, "venue_id": venue_id}
+
+    @api_router.post("/admin/venues/{venue_id}/archive")
+    async def archive_venue(venue_id: str, user: dict = Depends(get_current_user)):
+        venue = await db.venues.find_one({"id": venue_id}, {"_id": 0})
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        authz.require_venue_staff(user, venue)
+        await db.venues.update_one({"id": venue_id}, {"$set": {"archived": True, "active": False, "updated_at": _iso()}})
+        return {"archived": True, "venue_id": venue_id}
+
+    @api_router.post("/admin/venues/{venue_id}/unarchive")
+    async def unarchive_venue(venue_id: str, user: dict = Depends(get_current_user)):
+        venue = await db.venues.find_one({"id": venue_id}, {"_id": 0})
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        authz.require_venue_staff(user, venue)
+        await db.venues.update_one({"id": venue_id}, {"$set": {"archived": False, "active": True, "updated_at": _iso()}})
+        return {"archived": False, "venue_id": venue_id}
 
     @api_router.put("/admin/events/{event_id}")
     async def update_event(event_id: str, data: EventInput, user: dict = Depends(get_current_user)):
@@ -337,6 +390,52 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
                "starts_at": data.starts_at, "ends_at": data.ends_at, "updated_at": _iso()}
         await db.events.update_one({"id": event_id}, {"$set": upd})
         return {**ev, **upd}
+
+    async def _event_dependents(event_id: str):
+        return {
+            "participants": await db.event_participation.count_documents({"event_id": event_id}),
+            "queue_items": await db.event_queue.count_documents({"event_id": event_id}),
+            "battles": await db.event_challenges.count_documents({"event_id": event_id}),
+            "perk_usage": await db.perk_usage.count_documents({"event_id": event_id}),
+            "point_history": await db.season_accomplishments.count_documents({"event_id": event_id}),
+        }
+
+    @api_router.get("/admin/events/{event_id}/dependents")
+    async def event_dependents(event_id: str, user: dict = Depends(get_current_user)):
+        ev = await _get_event(event_id)
+        authz.require_event_staff(user, ev)
+        deps = await _event_dependents(event_id)
+        return {"event_id": event_id, "dependents": deps, "can_hard_delete": sum(deps.values()) == 0}
+
+    @api_router.delete("/admin/events/{event_id}")
+    async def delete_event(event_id: str, user: dict = Depends(get_current_user)):
+        """Authorized event staff may hard-delete ONLY an event with zero dependent records
+        (participation/queue/battles/perks/points); otherwise 409 -> archive to preserve history."""
+        ev = await _get_event(event_id)
+        authz.require_event_staff(user, ev)
+        deps = await _event_dependents(event_id)
+        if sum(deps.values()) > 0:
+            raise HTTPException(status_code=409, detail={
+                "message": "Event has historical records and cannot be permanently deleted. Archive it instead to preserve history.",
+                "dependents": deps})
+        await db.events.delete_one({"id": event_id})
+        return {"deleted": True, "event_id": event_id}
+
+    @api_router.post("/admin/events/{event_id}/archive")
+    async def archive_event(event_id: str, user: dict = Depends(get_current_user)):
+        ev = await _get_event(event_id)
+        authz.require_event_staff(user, ev)
+        await db.events.update_one({"id": event_id},
+                                   {"$set": {"status": "archived", "prev_status": ev.get("status"), "updated_at": _iso()}})
+        return {"archived": True, "event_id": event_id, "status": "archived"}
+
+    @api_router.post("/admin/events/{event_id}/unarchive")
+    async def unarchive_event(event_id: str, user: dict = Depends(get_current_user)):
+        ev = await _get_event(event_id)
+        authz.require_event_staff(user, ev)
+        restore = ev.get("prev_status") or "scheduled"
+        await db.events.update_one({"id": event_id}, {"$set": {"status": restore, "updated_at": _iso()}})
+        return {"archived": False, "event_id": event_id, "status": restore}
 
     # -------------------- EVENT QR (staff, scope-checked) --------------------
     @api_router.get("/admin/events/{event_id}/qr")
