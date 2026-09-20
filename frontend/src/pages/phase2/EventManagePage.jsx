@@ -96,6 +96,8 @@ const EventManagePage = () => {
   const [userSearch, setUserSearch] = useState('');
   const [awardFor, setAwardFor] = useState(null);
   const [customPts, setCustomPts] = useState('');
+  const [awarding, setAwarding] = useState(false);   // in-flight guard: blocks double-clicks
+  const [awardKey, setAwardKey] = useState(null);     // per-dialog-open idempotency key
   const [newBattle, setNewBattle] = useState({ challenger_id: '', opponent_id: '', challenge_type: '' });
 
   const sensors = useSensors(
@@ -151,17 +153,37 @@ const EventManagePage = () => {
     catch (e) { toast.error(e.response?.data?.detail || 'Failed to reorder'); loadQueue(); }
   };
 
+  // Open the award dialog and mint a fresh idempotency key for THIS award session.
+  const openAward = (s) => {
+    setAwardKey((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+    setAwardFor(s);
+  };
+
   const doAward = async (points, action_id, notes) => {
     if (!awardFor) return;
     if (!points || points <= 0) { toast.error('Enter a positive amount'); return; }
+    if (awarding) return;   // ignore rapid double-clicks while a request is in flight
+    setAwarding(true);
     try {
-      const r = await p2.awardPoints(eventId, { user_id: awardFor.user_id, points, action_id, notes });
+      // Stable per-(session, action) dedupe key: a double-click/retry of the SAME submission
+      // maps to the same key (awarded once); reopening the dialog mints a new key so a
+      // separate legitimate award of the same action later is allowed.
+      const dedupe_key = `kjaward:${awardKey}:${action_id}:${points}`;
+      const r = await p2.awardPoints(eventId, { user_id: awardFor.user_id, points, action_id, notes, dedupe_key });
       toast.success(`Awarded ${points} pts to ${awardFor.display_name}` + (r.season_points != null ? ` (season ${r.season_points})` : ''));
       if (r.badge_names && r.badge_names.length) {
         toast.success(`🏅 Badge unlocked: ${r.badge_names.join(', ')}${r.bonus_points ? ` (+${r.bonus_points} bonus pts)` : ''}`, { duration: 5000 });
       }
       setAwardFor(null); setCustomPts(''); loadSingers();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Award failed'); }
+    } catch (e) {
+      if (e.response?.status === 409) {
+        // Duplicate of this exact submission — already applied, so this is NOT a new award.
+        toast.info('That award was already applied — not awarded again.');
+        setAwardFor(null); setCustomPts(''); loadSingers();
+      } else {
+        toast.error(e.response?.data?.detail || 'Award failed');
+      }
+    } finally { setAwarding(false); }
   };
 
   const bCtl = async (fn, ...args) => { try { const r = await fn(...args); if (r?.message) toast.success(r.message); loadBattles(); loadSingers(); } catch (e) { toast.error(e.response?.data?.detail || 'Action failed'); } };
@@ -281,7 +303,7 @@ const EventManagePage = () => {
                       <StatusBadge status={s.status} />
                     </div>
                   </div>
-                  <Button size="sm" className="btn-gold" data-testid={`award-${s.user_id}`} onClick={() => setAwardFor(s)}><Award className="w-4 h-4 mr-2" /> Award</Button>
+                  <Button size="sm" className="btn-gold" data-testid={`award-${s.user_id}`} onClick={() => openAward(s)}><Award className="w-4 h-4 mr-2" /> Award</Button>
                 </div>
               ))}
             </div>
@@ -303,7 +325,7 @@ const EventManagePage = () => {
             <div className="divide-y divide-white/5 max-h-[400px] overflow-y-auto">
               {filteredSingers.length === 0 && <p className="text-white/40 p-4">No checked-in singers match.</p>}
               {filteredSingers.map((s) => (
-                <div key={s.user_id} className="flex items-center justify-between p-4 hover:bg-white/5 cursor-pointer" onClick={() => setAwardFor(s)} data-testid={`award-user-${s.user_id}`}>
+                <div key={s.user_id} className="flex items-center justify-between p-4 hover:bg-white/5 cursor-pointer" onClick={() => openAward(s)} data-testid={`award-user-${s.user_id}`}>
                   <div><h3 className="font-medium text-white">{s.display_name}</h3><p className="text-white/40 text-sm">{s.event_points} event pts</p></div>
                   <Button size="sm" className="btn-gold"><Gift className="w-4 h-4 mr-2" /> Award</Button>
                 </div>
@@ -441,11 +463,11 @@ const EventManagePage = () => {
           <DialogHeader>
             <DialogTitle className="font-cinzel text-2xl text-gold flex items-center gap-2"><Gift className="w-5 h-5" /> Award Points{awardFor ? ` to ${awardFor.display_name}` : ''}</DialogTitle>
           </DialogHeader>
-          <p className="text-white/50 text-sm">Recorded for <span className="text-gold">{event?.name}</span> + current season (never lifetime points).</p>
+          <p className="text-white/50 text-sm">Recorded for <span className="text-gold">{event?.name}</span> + current season + the singer's lifetime total (legacy King Klub behavior).</p>
           <div className="space-y-2 mt-3" data-testid="award-actions">
             {pointActions.map((a) => (
-              <button key={a.id} data-testid={`award-action-${a.id}`} onClick={() => doAward(a.points, a.id, a.name)}
-                className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-gold/10 rounded-lg text-left transition-colors">
+              <button key={a.id} data-testid={`award-action-${a.id}`} onClick={() => doAward(a.points, a.id, a.name)} disabled={awarding}
+                className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-gold/10 rounded-lg text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                 <div><p className="text-white font-medium">{a.name}</p><p className="text-white/50 text-sm">{a.description}</p></div>
                 <span className={`font-cinzel font-bold text-lg ${a.points >= 100 ? 'text-gold' : a.points >= 50 ? 'text-purple-400' : 'text-white'}`}>+{a.points}</span>
               </button>
@@ -455,7 +477,7 @@ const EventManagePage = () => {
             <label className="block text-sm text-white/70 mb-2">Custom amount</label>
             <div className="flex gap-2">
               <input data-testid="custom-points-input" type="number" min="1" value={customPts} onChange={(e) => setCustomPts(e.target.value)} placeholder="e.g. 15" className="royal-input flex-1 bg-black/40" />
-              <Button data-testid="award-custom-btn" onClick={() => doAward(parseInt(customPts, 10), 'custom_award', 'Custom award')} className="btn-gold">Award</Button>
+              <Button data-testid="award-custom-btn" disabled={awarding} onClick={() => doAward(parseInt(customPts, 10), 'custom_award', 'Custom award')} className="btn-gold disabled:opacity-50">{awarding ? 'Awarding…' : 'Award'}</Button>
             </div>
           </div>
         </DialogContent>

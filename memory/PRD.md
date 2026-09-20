@@ -404,7 +404,18 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 
 ---
 
-## Changelog — 2026-06-18 (LEGACY PARITY: manual point awards now mirror to lifetime users.points)
+## Changelog — 2026-06-18 (Award Points dialog: per-submission idempotency / double-click protection)
+**Change (`EventManagePage.jsx`, frontend only)**: hardened the KJ Award Points dialog against accidental double-submits.
+- `openAward(singer)` mints a fresh idempotency key (`crypto.randomUUID()`) each time the dialog opens.
+- `doAward` sends `dedupe_key = kjaward:{sessionKey}:{action_id}:{points}` and is guarded by an `awarding` in-flight flag; action buttons + custom Award button are `disabled` while a request is pending (custom button shows "Awarding…").
+- A duplicate of the exact submission returns backend **409** → handled gracefully as "already applied — not awarded again" (info toast), never a scary error and never a double-award.
+- Behavior: one intentional award = one award; double-click/retry = single award (event+season+lifetime once); reopening the dialog = new key = a separate legitimate award is allowed. Point values, badge bonuses, dedupe/ledger system, and the automatic-vs-manual rules are all unchanged. Also fixed the dialog subtitle (was "never lifetime points" → now reflects legacy parity: event + season + lifetime).
+**Backend**: unchanged this round — idempotency already enforced in `award_event_points` (409 on duplicate dedupe) and proven by `test_manual_award_lifetime.py` (same dedupe → one award; separate → two).
+**Regression (all green)**: test_manual_award_lifetime 19, event_song_points 11, kj_badges 14, kj_phase2 24 (incl. "Battle winner lifetime UNCHANGED"), focused_verify 22, kj_venue_event_manage 22, kj_delete_ended_event 31, staff_auth 29, location_zip 21. Award dialog re-rendered/verified in UI. Known-unrelated: test_battle_requests still fails at `dakota@hotmail.com` login (now the real KJ "King Kota", not a singer). DEV/staging only; no production deploy; no realtime work started.
+
+---
+
+
 **Decision (user-approved option a)**: preserve legacy King Klub behavior where a MANUAL KJ point action increased the singer's lifetime `users.points`, while KEEPING Phase 2 event + season scoping.
 **Legacy audit (server.py)**: `POST /admin/queue/{id}/complete` (song) was the ONLY *automatic* award (+10 lifetime + songs_performed + milestone badges). `POST /admin/award-points` was *manual* (admin-only) for every action (Bring Friend +10, Blindfolded +250, Random Song +200, TikTok +200, Bar Song +100, Duet/Tips/Nights/Follows) — all updated lifetime `users.points` (action value + first-time badge bonus).
 **Change (`phase2_seasons.py` `award_event_points`)**: after the event+season award and badge evaluation, mirror `body.points + badge bonus` to lifetime via `award_ledger(..., source="lifetime_manual", dedupe_key=f"lifetime_manual:{dedupe}", to_event=False, to_season=False, to_lifetime=True)`. Idempotency is anchored to the award's own dedupe key — a duplicate dedupe_key 409s before this code, so lifetime never double-counts; a genuinely separate award (new dedupe) re-awards. Automatic paths (song completion `lifetime_song`, check-in `lifetime_checkin`) unchanged. **Battles intentionally NOT mirrored to lifetime** (remain event/season only).
