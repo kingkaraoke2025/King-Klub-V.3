@@ -234,6 +234,12 @@ def build_router(db, manager, get_current_user, get_admin_user, event_qr_enabled
                 awarded_pts = song_points
                 await db.event_participation.update_one(
                     {"user_id": item["user_id"], "event_id": event_id}, {"$inc": {"songs_performed": 1}})
+                # Mirror check-in: also credit the singer's lifetime total (users.points) so the +10
+                # is visible on their dashboard. Event-triggered + separately deduped -> not a global,
+                # unscoped award and cannot double-count on retries/repeat completes.
+                await award_ledger(user_id=item["user_id"], points=song_points, source="lifetime_song",
+                                   dedupe_key=f"lifetime_song:{item_id}", event=ev,
+                                   to_event=False, to_season=False, to_lifetime=True)
         nxt = await db.event_queue.find_one({"event_id": event_id, "status": "pending"}, sort=[("position", 1)])
         if nxt:
             await db.event_queue.update_one({"id": nxt["id"]}, {"$set": {"status": "current"}})

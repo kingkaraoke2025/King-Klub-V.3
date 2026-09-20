@@ -404,7 +404,16 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 
 ---
 
-## Changelog — 2026-06-18 (BUGFIX: singer song not appearing in Venue KJ queue — Case F legacy/Phase2 mismatch)
+## Changelog — 2026-06-18 (BUGFIX: singing a completed song did not award the +10 to the singer's visible total)
+**Symptom**: KJ King Kota marked Jabby's queued song complete at event `2753aec5-…d5b2b` (Test karaoke), but Jabby "did not receive" the +10 Sing-Song points.
+**Investigation (points WERE created)**: `complete_event_song` (`phase2_events.py`) DID award via `award_ledger` — a `point_ledger` row `source=event_song +10` (dedupe `song:{item_id}`), `event_participation.event_points +10`, and `season_participation.points +10` on the current active season `dbb98d62` (Jabby was #1 on the event leaderboard). So event + season scoping worked.
+**Root cause**: the award used `award_ledger` defaults (`to_lifetime=False`), so it never touched the legacy lifetime `users.points`. BUT event **check-in** posts a second `lifetime_checkin` award (`to_lifetime=True`) that bumps `users.points`. The singer **Dashboard shows `users.points`** — so check-ins showed on the dashboard while sung songs did not → looked like "no +10". Inconsistent with check-in and with Phase 1 (where singing bumped the visible total).
+**Fix** (`phase2_events.py complete_event_song`): after the `event_song` award, mirror check-in with a second idempotent `lifetime_song` award (`dedupe_key=lifetime_song:{item_id}`, `to_event=False,to_season=False,to_lifetime=True`). Event-triggered + separately deduped → not a global/unscoped award and cannot double-count. Only fires on the first successful completion. Legacy `/api/queue*` and other point rules untouched.
+**Verified** (real endpoints = the ones the KJ UI calls): new song → set-current → complete awards exactly **+10 lifetime / +10 event / +10 season**; repeat complete awards 0 (idempotent); not credited to any other singer; tied to the correct event and current active season. Jabby's dashboard now reads **70 points**. Also healed the already-completed "Ggghh" song's lifetime +10 retroactively. Regression green: `test_event_song_points.py` 11/11, kj_badges 14, kj_phase2 24, focused_verify 22, kj_venue_event_manage 22, kj_delete_ended_event 31, staff_auth 29, location_zip 21. Production NOT touched.
+
+---
+
+
 **Symptom**: Singer (Jabby) checked into event `2753aec5-…d5b2b` "Test karaoke" (Legacy Venue, KJ King Kota) and added songs successfully, but they never showed in King Kota's KJ Show Console.
 **Root cause (Case F — legacy/Phase 2 queue collection mismatch)**: check-in was correct (Phase 2 `event_checkins` + `event_participation`), but the singer app's Add-Song wrote to the **legacy `db.queue`** collection (via `POST /api/queue`) while the KJ Phase 2 console reads the **Phase 2 `db.event_queue`** (via `GET /api/events/{id}/queue`). Two different collections → KJ saw nothing. Authorization/event-scoping were fine (King Kota's venue scope covers Legacy Venue; both sides used the correct event id).
 **Fix (integration — both sides now use the same Phase 2 event_queue)**:
