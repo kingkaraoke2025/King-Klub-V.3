@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -92,6 +92,8 @@ const EventManagePage = () => {
   const [battleTypes, setBattleTypes] = useState([]);
   const [board, setBoard] = useState({ mode: 'event', rows: [] });
   const [qr, setQr] = useState(null);
+  const [activeTab, setActiveTab] = useState('queue');
+  const qrReqRef = useRef(0);   // guards against stale async QR responses on rapid event switches
   const [copied, setCopied] = useState(false);
   const [userSearch, setUserSearch] = useState('');
   const [awardFor, setAwardFor] = useState(null);
@@ -117,9 +119,28 @@ const EventManagePage = () => {
   const loadBattles = useCallback(async () => { try { setBattles(await p2.battles(eventId)); } catch (e) {} }, [eventId]);
   const loadEventBoard = async () => { try { setBoard({ mode: 'event', rows: (await p2.eventLeaderboard(eventId)).leaderboard }); } catch (e) {} };
   const loadSeasonBoard = async () => { try { setBoard({ mode: 'season', rows: (await p2.seasonLeaderboard()).leaderboard }); } catch (e) {} };
-  const loadQR = async () => { try { setQr(await p2.eventQR(eventId)); } catch (e) { toast.error(e.response?.data?.detail || 'QR failed'); } };
+  const loadQR = async () => {
+    // Capture the event this request belongs to; ignore the response if the KJ has since
+    // switched events (prevents a slow response for event A overwriting event B's QR).
+    const reqId = ++qrReqRef.current;
+    const forEvent = eventId;
+    try {
+      const data = await p2.eventQR(forEvent);
+      if (qrReqRef.current === reqId && forEvent === eventId) setQr(data);
+    } catch (e) {
+      if (qrReqRef.current === reqId && forEvent === eventId) toast.error(e.response?.data?.detail || 'QR failed');
+    }
+  };
 
   useEffect(() => { loadEvent(); loadQueue(); loadSingers(); loadBattles(); }, [loadEvent, loadQueue, loadSingers, loadBattles]);
+  // QR belongs to a specific event: the instant the selected event changes, drop any previously
+  // displayed QR so a stale code from another event can never be shown/used. Invalidate in-flight
+  // QR requests too. Fresh QR is (re)loaded when the QR tab is open for the current event.
+  useEffect(() => { qrReqRef.current++; setQr(null); }, [eventId]);
+  useEffect(() => {
+    if (activeTab === 'qr' && event && !qr) loadQR();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, eventId, event]);
   // Near-real-time KJ notification of pending battle requests (polling; App already polls elsewhere).
   useEffect(() => {
     const id = setInterval(() => { loadBattles(); }, 12000);
@@ -222,7 +243,7 @@ const EventManagePage = () => {
         <div className="stat-card"><div className="stat-value">{activeBattles.length}</div><div className="stat-label">Active Battles</div></div>
       </div>
 
-      <Tabs defaultValue="queue" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full sm:w-auto bg-royal-paper border border-white/10 flex-wrap h-auto">
           <TabsTrigger value="queue" data-testid="tab-queue" className="data-[state=active]:bg-gold/20 data-[state=active]:text-gold"><Mic2 className="w-4 h-4 mr-2" />Queue</TabsTrigger>
           <TabsTrigger value="singers" data-testid="tab-singers" className="data-[state=active]:bg-gold/20 data-[state=active]:text-gold"><Users className="w-4 h-4 mr-2" />Singers</TabsTrigger>
@@ -439,8 +460,17 @@ const EventManagePage = () => {
         {/* QR */}
         <TabsContent value="qr" className="mt-6">
           <div className="glass-card p-6 flex flex-col items-center text-center" data-testid="event-qr-panel">
-            <div className="text-white/60 mb-2">Event QR for <span className="text-gold font-semibold">{event?.name}</span></div>
-            {qr ? (
+            <div className="text-white/60 mb-1">Event QR for <span className="text-gold font-semibold" data-testid="qr-event-name">{event?.name}</span></div>
+            <div className="text-white/40 text-xs mb-4" data-testid="qr-event-meta">
+              {event?.event_date}{event?.status ? <> · <span className="uppercase">{event.status}</span></> : null} · ID {eventId?.slice(0, 8)}
+            </div>
+            {['ended', 'cancelled', 'archived'].includes((event?.status || '').toLowerCase()) ? (
+              <div className="w-full max-w-lg bg-red-500/10 border border-red-500/40 rounded-xl p-6" data-testid="qr-checkin-disabled">
+                <XCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+                <p className="text-red-300 font-semibold" data-testid="qr-ended-message">Event {(event?.status || '').toLowerCase()} — check-in disabled</p>
+                <p className="text-white/50 text-sm mt-1">Singers cannot check into a {(event?.status || '').toLowerCase()} event. Reopen the event to enable QR check-in.</p>
+              </div>
+            ) : qr ? (
               <>
                 <img src={qrImage(checkinUrl)} alt="Event QR" className="rounded-xl border border-gold/30 bg-[#1A0B2E] p-2" data-testid="event-qr-image" />
                 <div className="mt-4 w-full max-w-lg">
