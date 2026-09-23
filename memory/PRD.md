@@ -404,7 +404,20 @@ points award + season leaderboard, venue_kj control hiding + backend cross-scope
 
 ---
 
-## Changelog — 2026-06-18 (FRONTEND FIX: Leaderboard page blank — retired /tonight aborted the fetch)
+## Changelog — 2026-06-18 (FRONTEND FIX: KJ QR panel showed a STALE QR after switching events)
+**Reported bug:** KJ created a new event, showed its QR, singer scanned → "already checked in." Diagnostic (read-only) proved the backend QR/check-in is correctly event-scoped (each token embeds its own `event_id`; check-in dedups per `{user,event}`; ended events return 400). The QR the singer scanned actually carried an OLDER active event's id — because the KJ console's `qr` React state was never reset when the selected event changed, so a previously-viewed event's QR/URL persisted on the next event's QR tab.
+**Fix (frontend only, `EventManagePage.jsx`):**
+- `useEffect([eventId])` → `setQr(null)` + bump `qrReqRef`: the instant the event changes, the old QR is dropped and any in-flight QR request invalidated (rapid-switch stale-response guard in `loadQR`).
+- Tabs made controlled (`activeTab`); the correct event's QR **auto-loads** when the QR tab opens (uses the current `eventId`, never a cached one).
+- QR panel shows event identity (`qr-event-name`, `qr-event-meta` = date · STATUS · id-prefix) so the KJ can verify the event.
+- Ended/cancelled/archived events show `qr-checkin-disabled` → "Event ended — check-in disabled" and **no scannable QR** (backend already blocks ended check-in; unchanged).
+**Backend:** unchanged.
+**Tests:** new `backend/test_qr_event_scope.py` **13/13** (incident IDs: new event `580016f2` QR token resolves to `580016f2`, NOT `2753aec5`; singer in event A can independently check into B; A's QR never checks into B; ended event blocks check-in). testing_agent **iteration_16**: frontend **3/3 flows 100%** (auto-load, no stale QR on switch, ended disabled banner, identity correct). DEV/staging only; no production deploy.
+**Known (unrelated):** several hardcoded-fixture backend suites (test_staff_auth, focused_verify, test_kj_venue_event_manage, test_kj_delete_ended_event, test_kj_phase2, test_manual_award_lifetime, test_event_song_points) now fail because their hardcoded scenario event `EVENT_A = d43c3271…` was DELETED during this session's manual DEV activity (Test Venue has 0 events). `setup_final_scenario.py` recreates events with NEW random ids, so it won't restore that literal id. This is DEV fixture drift, NOT caused by the frontend QR fix. Also noted: legacy `/api/ws` WebSocket console error persists (pre-existing P1).
+
+---
+
+
 **Root cause (Category D, frontend):** `LeaderboardPage.js` fetched `/api/leaderboard` and the retired `/api/leaderboard/tonight` inside one `Promise.all`. The retired endpoint now returns **403**, which rejected the whole `Promise.all` → the `catch` ran → `setAllTimeLeaderboard(...)` never executed → the ENTIRE page rendered empty even though `/api/leaderboard` returned Jabby correctly. Default tab was also the retired "Tonight". Backend data + queries were all correct (Jabby present in event/season/all-time responses).
 **Fix (frontend only, `LeaderboardPage.js`):** removed all use of `/api/leaderboard/tonight`. Three tabs now backed by current Phase 2 sources, each fetched INDEPENDENTLY via `Promise.allSettled` (one failure can't blank the others; each shows its own error card + Retry):
 - **Season** (new default) → `GET /api/seasons/current/leaderboard` (season_points, current season).
