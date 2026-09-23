@@ -75,6 +75,33 @@ def ensure_staff_scope():
         _ensure("lm@kingkaraoke2025.com", "Location Manager", "Manager!2026", "location_manager", "location_ids", loc["id"])
 
 
+def ensure_active_event():
+    """Idempotently guarantee the KJ's Test Venue has ONE active event, so the KJ Console
+    always has a 'Run Show' target out-of-the-box (dev DB only). Never creates a second one
+    if an active event already exists there; never touches production."""
+    loc = db.locations.find_one({"name": "Test Location"}, {"_id": 0, "id": 1})
+    ven = db.venues.find_one({"name": "Test Venue"}, {"_id": 0, "id": 1, "location_id": 1})
+    if not ven:
+        print("no Test Venue — skipping active-event seed")
+        return
+    location_id = ven.get("location_id") or (loc or {}).get("id")
+    existing = db.events.find_one({"venue_id": ven["id"], "status": "active"}, {"_id": 0, "id": 1})
+    if existing:
+        print(f"kept active event {existing['id']} for Test Venue")
+        return
+    now = datetime.now(timezone.utc)
+    ev = {
+        "id": "dev-event-0001", "venue_id": ven["id"], "location_id": location_id,
+        "name": "Dev Karaoke Night", "slug": "dev-karaoke-night",
+        "event_date": now.strftime("%Y-%m-%d"), "status": "active",
+        "starts_at": None, "ends_at": None, "qr_secret": None,
+        "is_sample": True, "is_default_legacy": False, "env": "development",
+        "created_at": now.isoformat(), "updated_at": now.isoformat(),
+    }
+    db.events.update_one({"id": ev["id"]}, {"$set": ev}, upsert=True)
+    print(f"created active event {ev['id']} for Test Venue")
+
+
 if __name__ == "__main__":
     pw = os.environ.get("DEV_ADMIN_PASSWORD", "DevKing!2026")
     upsert_user("dev-admin-0001", "dev-admin@kingkaraoke2025.com", "Dev Admin", pw, True, "global_admin")
@@ -82,4 +109,5 @@ if __name__ == "__main__":
     upsert_user("dev-singer-0002", "singer2@kingkaraoke2025.com", "Royal Singer Two", "Singer!2026", False, "singer")
     upsert_user("dev-singer-0003", "dakota@hotmail.com", "King Kota", "Dakota!2026", False, "singer")
     ensure_staff_scope()
+    ensure_active_event()
     print("seed done")

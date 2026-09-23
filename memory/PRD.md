@@ -475,3 +475,21 @@ Four targeted hardening improvements around the KJ ended-event permanent delete.
 3. **Permanent-deletion audit trail** — new `event_deletion_audit` collection; `_write_deletion_audit()` writes a minimal record **before** the purge (survives it): actor id + display name + role, event id/name/status, venue id/name, location id/name, action, timestamp, aggregate `purged_counts`. **No detailed history** (no participation/queue/battle/vote/perk/point rows or singer PII). Read-only `GET /admin/event-deletions` — global_admin=all, venue_kj=own-venue scope, location_manager=own-location scope, singer=403; **no mutation route → immutable**. Frontend `DeletionAuditPage.jsx` at `/admin/phase2/deletions` + "Deletion Log" nav for admin & staff.
 4. **Styled AlertDialog** — ENDED deletes now open a Radix `AlertDialog` ('Delete Ended Event Permanently?') spelling out that the event and all event-specific history are permanently deleted and cannot be undone (test-ids `delete-ended-dialog`/`-cancel`/`-confirm`). Non-ended keeps the legacy confirm + 409→archive fallback.
 - **Tests**: `backend/test_kj_delete_ended_event.py` **31/31** (adds audit-created/immutable/scoped, non-disclosing 403 for nonexistent/already-deleted, audit endpoint role-scoping). Full regression green: kj_venue_event_manage 22, staff_auth 29, kj_phase2 24, focused_verify 22, location_zip 21, test_battle_requests 16, test_kj_badges 14. testing_agent **iteration_15**: backend 9/9 + frontend 7/7, no bugs. Production NOT touched (isolated `king_klub_phase2_dev`, no deploy).
+
+---
+
+## 2026-06 — Phase 2 REAL-TIME (WebSocket) sync across all consoles
+
+**Goal:** users/staff no longer manually refresh; existing King Klub info updates live. Information-sync only — **NO business-rule / auth / isolation / point-value changes.** DEV/STAGING only (never deployed).
+
+**Audit finding:** the isolated per-event WS room `/api/ws/events/{event_id}?token=JWT` (JWT + `authz.require_event_view` scope) and its `manager.broadcast_event(...)` broadcasts (SINGER_CHECKED_IN, QUEUE_UPDATED[song_added/removed/completed/now_playing/reordered], SINGER_LIST_REORDERED, PERK_USED, POINTS_AWARDED, BATTLE_UPDATED[created/voting_open/voting_closed/vote/completed/cancelled]) **already existed** — but **no frontend consumer connected to it**. Legacy global `/api/ws` (unauth) still drives Phase-1 singer-vs-singer battles via window CustomEvents (untouched).
+
+**Backend (additive only):** added `EVENT_UPDATED` broadcast on event status-change / update / archive / unarchive in `phase2_server.py`. No other backend change.
+
+**Frontend:** new `src/hooks/useEventSocket.js` — authenticated per-event subscription with: auto-connect, 2s→15s backoff reconnect, 30s keepalive ping, resubscribe on `eventId` change (teardown-before-connect), single-socket guard, cross-event/stale message drop (`msg.event_id !== subscribed → ignore`), `onReady()` refetch on every (re)connect (initial-state + deltas + reconnect reconcile). Wired into: `EventManagePage.jsx` (KJ console — refetch queue/singers/battles/board/event per delta), `QueuePage.js` (singer), `LeaderboardPage.js` (event+season+alltime), `DashboardPage.js`. Light **30s safety refetch** retained behind WS; legacy 12s battle poll kept during transition. Refetch-authoritative-state design = inherently idempotent (no duplicate appends).
+
+**Tests:** new `backend/test_realtime_ws.py` — two genuinely separate authenticated WS clients (venue_kj + singer): **21/21** incl. auth-reject (no token / out-of-scope KJ), live delivery of every event type to both clients, full battle lifecycle, EVENT_UPDATED, and cross-event isolation (A-subscriber gets nothing from B). Frontend `testing_agent` **iteration_17: 11/11** realtime UI flows with the KJ page NEVER reloaded (all via WS, 30s poll never fired). Regression suites pass except pre-existing hardcoded-fixture drift (deleted DEV event IDs — confirmed, not a regression).
+
+**Seed:** `seed_dev.py` gained idempotent `ensure_active_event()` so KJ's Test Venue always has one active "Run Show" target out-of-the-box.
+
+**Deferred (per user):** event-scoped announcements/KJ-messaging feature (build later); singer-side event-battle voting UI does not exist yet (realtime wired for what exists).
