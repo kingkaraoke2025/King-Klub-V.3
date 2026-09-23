@@ -252,6 +252,8 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         ev = await _get_event(event_id)
         authz.require_event_staff(user, ev)
         await db.events.update_one({"id": event_id}, {"$set": {"status": data.status, "updated_at": _iso()}})
+        await manager.broadcast_event(event_id, {"type": "EVENT_UPDATED", "action": "status_changed",
+                                                 "event_id": event_id, "status": data.status})
         return {"message": "Event status updated", "event_id": event_id, "status": data.status}
 
     @api_router.put("/admin/locations/{location_id}")
@@ -389,6 +391,8 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         upd = {"name": data.name, "event_date": data.event_date, "status": data.status,
                "starts_at": data.starts_at, "ends_at": data.ends_at, "updated_at": _iso()}
         await db.events.update_one({"id": event_id}, {"$set": upd})
+        await manager.broadcast_event(event_id, {"type": "EVENT_UPDATED", "action": "details_changed",
+                                                 "event_id": event_id, "status": upd.get("status")})
         return {**ev, **upd}
 
     async def _event_dependents(event_id: str):
@@ -503,6 +507,8 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         authz.require_event_staff(user, ev)
         await db.events.update_one({"id": event_id},
                                    {"$set": {"status": "archived", "prev_status": ev.get("status"), "updated_at": _iso()}})
+        await manager.broadcast_event(event_id, {"type": "EVENT_UPDATED", "action": "archived",
+                                                 "event_id": event_id, "status": "archived"})
         return {"archived": True, "event_id": event_id, "status": "archived"}
 
     @api_router.post("/admin/events/{event_id}/unarchive")
@@ -511,6 +517,8 @@ def register_phase2(app, api_router, db, manager, get_current_user, get_admin_us
         authz.require_event_staff(user, ev)
         restore = ev.get("prev_status") or "scheduled"
         await db.events.update_one({"id": event_id}, {"$set": {"status": restore, "updated_at": _iso()}})
+        await manager.broadcast_event(event_id, {"type": "EVENT_UPDATED", "action": "unarchived",
+                                                 "event_id": event_id, "status": restore})
         return {"archived": False, "event_id": event_id, "status": restore}
 
     # -------------------- EVENT QR (staff, scope-checked) --------------------

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Trophy, Crown, Medal, Star, TrendingUp, Calendar, CalendarDays, AlertTriangle } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { useAuth } from '@/context/AuthContext';
+import useEventSocket from '@/hooks/useEventSocket';
 import { getRankName } from '@/utils/rankUtils';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import axios from 'axios';
@@ -43,7 +44,7 @@ const normEvent = (arr) => (arr || []).map((e, i) => ({
 }));
 
 const LeaderboardPage = () => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [activeTab, setActiveTab] = useState('season');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ season: [], event: [], alltime: [] });
@@ -51,6 +52,7 @@ const LeaderboardPage = () => {
   const [eventName, setEventName] = useState(null);
   const [seasonName, setSeasonName] = useState('Current Season');
   const [noActiveEvent, setNoActiveEvent] = useState(false);
+  const [activeEventId, setActiveEventId] = useState(null);
 
   const fetchLeaderboards = useCallback(async () => {
     // Each leaderboard is fetched INDEPENDENTLY (Promise.allSettled): a 403/404/500 from one
@@ -62,7 +64,7 @@ const LeaderboardPage = () => {
       const ev = me.data.active_event;
       if (!ev) return { _noEvent: true };
       const lb = await axios.get(`${API}/events/${ev.id}/leaderboard`);
-      return { _name: ev.name, data: lb.data };
+      return { _name: ev.name, _id: ev.id, data: lb.data };
     })();
 
     const [sRes, aRes, eRes] = await Promise.allSettled([seasonP, alltimeP, eventP]);
@@ -84,9 +86,9 @@ const LeaderboardPage = () => {
 
     if (eRes.status === 'fulfilled') {
       if (eRes.value._noEvent) {
-        setNoActiveEvent(true); setEventName(null); setData((d) => ({ ...d, event: [] }));
+        setNoActiveEvent(true); setEventName(null); setActiveEventId(null); setData((d) => ({ ...d, event: [] }));
       } else {
-        setNoActiveEvent(false); setEventName(eRes.value._name);
+        setNoActiveEvent(false); setEventName(eRes.value._name); setActiveEventId(eRes.value._id);
         setData((d) => ({ ...d, event: normEvent(eRes.value.data.leaderboard) }));
       }
       setErrors((er) => ({ ...er, event: null }));
@@ -107,6 +109,14 @@ const LeaderboardPage = () => {
       window.removeEventListener('leaderboardReset', h);
     };
   }, [fetchLeaderboards]);
+
+  // ---- REALTIME: any point/battle change in the singer's active event refreshes
+  // all three boards (event + season + all-time move together on a point award). ----
+  useEventSocket(activeEventId, token, {
+    onMessage: (msg) => {
+      if (['EVENT_POINTS_AWARDED', 'EVENT_BATTLE_UPDATED'].includes(msg.type)) fetchLeaderboards();
+    },
+  });
 
   const currentLeaderboard = data[activeTab] || [];
   const currentError = errors[activeTab];

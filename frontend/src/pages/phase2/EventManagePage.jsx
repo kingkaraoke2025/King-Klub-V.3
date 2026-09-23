@@ -14,6 +14,8 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Phase2Shell, StatusBadge } from '@/components/Phase2Shell';
+import { useAuth } from '@/context/AuthContext';
+import useEventSocket from '@/hooks/useEventSocket';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -83,6 +85,7 @@ const SortableQueueItem = ({ item, pendingLen, onSetCurrent, onRemove, onMoveUp,
 const EventManagePage = () => {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const { token } = useAuth();
   const [event, setEvent] = useState(null);
   const [venueName, setVenueName] = useState('');
   const [queue, setQueue] = useState([]);
@@ -148,6 +151,44 @@ const EventManagePage = () => {
   }, [loadBattles]);
   useEffect(() => { p2.pointActions().then(setPointActions).catch(() => {}); p2.battleTypes(eventId).then(setBattleTypes).catch(() => {}); }, [eventId]);
   useEffect(() => { if (event) p2.venues().then((vs) => setVenueName(vs.find((v) => v.id === event.venue_id)?.name || '')).catch(() => {}); }, [event]);
+
+  // Reload whichever leaderboard board is currently displayed (event vs season).
+  const reloadBoard = useCallback(() => {
+    setBoard((b) => {
+      if (b.mode === 'season') p2.seasonLeaderboard().then((d) => setBoard({ mode: 'season', rows: d.leaderboard })).catch(() => {});
+      else if (b.rows.length) p2.eventLeaderboard(eventId).then((d) => setBoard({ mode: 'event', rows: d.leaderboard })).catch(() => {});
+      return b;
+    });
+  }, [eventId]);
+
+  // ---- REALTIME: subscribe to this event's authenticated WS room (KJ scope) ----
+  // Backend enforces role+venue+event scope on connect; we only consume + refetch.
+  useEventSocket(eventId, token, {
+    onReady: () => { loadEvent(); loadQueue(); loadSingers(); loadBattles(); },
+    onMessage: (msg) => {
+      switch (msg.type) {
+        case 'EVENT_QUEUE_UPDATED':
+        case 'EVENT_SINGER_LIST_REORDERED':
+        case 'EVENT_PERK_USED':
+          loadQueue(); loadSingers(); break;
+        case 'EVENT_SINGER_CHECKED_IN':
+          loadSingers(); break;
+        case 'EVENT_POINTS_AWARDED':
+          loadSingers(); reloadBoard(); break;
+        case 'EVENT_BATTLE_UPDATED':
+          loadBattles(); loadSingers(); break;
+        case 'EVENT_UPDATED':
+          loadEvent(); break;
+        default: break;
+      }
+    },
+  });
+
+  // Light 30s reconciliation fallback behind the WS (in case a delta is ever missed).
+  useEffect(() => {
+    const id = setInterval(() => { loadEvent(); loadQueue(); loadSingers(); }, 30000);
+    return () => clearInterval(id);
+  }, [loadEvent, loadQueue, loadSingers]);
 
   const currentSong = useMemo(() => queue.find((q) => q.status === 'current'), [queue]);
   const pending = useMemo(() => queue.filter((q) => q.status === 'pending'), [queue]);

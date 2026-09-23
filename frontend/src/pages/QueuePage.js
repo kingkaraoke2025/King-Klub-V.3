@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mic2, Clock, Plus, X, Music, User, Loader2, MessageSquare, Zap, Crown, Sparkles, Timer, AlertCircle, QrCode, CheckCircle2 } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { useAuth } from '@/context/AuthContext';
+import useEventSocket from '@/hooks/useEventSocket';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
@@ -13,6 +14,7 @@ const API = `${BACKEND_URL}/api`;
 
 const QueuePage = () => {
   const { user } = useAuth();
+  const { token } = useAuth();
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [addingToQueue, setAddingToQueue] = useState(false);
@@ -82,6 +84,33 @@ const QueuePage = () => {
     const handleQueueUpdate = () => { refreshAll(); };
     window.addEventListener('queueUpdated', handleQueueUpdate);
     return () => { window.removeEventListener('queueUpdated', handleQueueUpdate); };
+  }, [refreshAll]);
+
+  // ---- REALTIME: subscribe to the singer's active event room ----
+  // Singers are authorized to view their event (authz.require_event_view). Any queue/
+  // check-in/perk/points/status change in THIS event refetches authoritative state.
+  useEventSocket(activeEvent?.id, token, {
+    onReady: () => { if (activeEvent?.id) { fetchQueue(activeEvent.id); fetchPerkStatus(activeEvent.id); fetchQueueStatus(activeEvent.id); } },
+    onMessage: (msg) => {
+      switch (msg.type) {
+        case 'EVENT_QUEUE_UPDATED':
+        case 'EVENT_SINGER_LIST_REORDERED':
+        case 'EVENT_PERK_USED':
+        case 'EVENT_SINGER_CHECKED_IN':
+        case 'EVENT_POINTS_AWARDED':
+          if (activeEvent?.id) { fetchQueue(activeEvent.id); fetchPerkStatus(activeEvent.id); fetchQueueStatus(activeEvent.id); }
+          break;
+        case 'EVENT_UPDATED':
+          refreshAll(); break;
+        default: break;
+      }
+    },
+  });
+
+  // Light 30s reconciliation fallback behind the WS.
+  useEffect(() => {
+    const id = setInterval(() => { refreshAll(); }, 30000);
+    return () => clearInterval(id);
   }, [refreshAll]);
 
   const handleAddToQueue = async (e) => {

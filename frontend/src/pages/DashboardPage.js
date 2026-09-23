@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { useAuth } from '@/context/AuthContext';
+import useEventSocket from '@/hooks/useEventSocket';
 import { Progress } from '@/components/ui/progress';
 import { getRankName } from '@/utils/rankUtils';
 import { toast } from 'sonner';
@@ -26,12 +27,13 @@ const rankIcons = {
 };
 
 const DashboardPage = () => {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, token } = useAuth();
   const [stats, setStats] = useState(null);
   const [recentAccomplishments, setRecentAccomplishments] = useState([]);
   const [referralStats, setReferralStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [activeEventId, setActiveEventId] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -67,6 +69,23 @@ const DashboardPage = () => {
       window.removeEventListener('pointsUpdated', handlePointsUpdate);
     };
   }, [fetchData, refreshUser]);
+
+  // Resolve the singer's active event so we can subscribe to its realtime room.
+  useEffect(() => {
+    let alive = true;
+    axios.get(`${API}/me/active-event`)
+      .then((r) => { if (alive) setActiveEventId(r.data.active_event?.id || null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // ---- REALTIME: event-scoped point/badge/battle changes update the dashboard
+  // (points award mirrors to lifetime, so rank/points here move live). ----
+  useEventSocket(activeEventId, token, {
+    onMessage: (msg) => {
+      if (['EVENT_POINTS_AWARDED', 'EVENT_BATTLE_UPDATED'].includes(msg.type)) { fetchData(); refreshUser(); }
+    },
+  });
 
   const progressToNextRank = user?.next_rank
     ? ((user.points - (user.rank?.min_points || 0)) / 
