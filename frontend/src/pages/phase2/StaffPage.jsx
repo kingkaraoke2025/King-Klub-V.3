@@ -3,7 +3,7 @@ import { Search, ShieldCheck, ShieldOff, UserCog, Building2, Check } from 'lucid
 import { toast } from 'sonner';
 import { Phase2Shell } from '@/components/Phase2Shell';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { p2, roleLabel } from '@/lib/phase2Api';
+import { p2, roleLabel, errMsg } from '@/lib/phase2Api';
 
 // Dev Admin Staff Management: find a user, grant/revoke Venue KJ, activate/deactivate,
 // and assign authorized venues. All enforcement is server-side; this is the control surface.
@@ -21,7 +21,7 @@ const StaffPage = () => {
     try {
       const [us, locs, vns] = await Promise.all([p2.adminUsers(), p2.locations(), p2.venues()]);
       setUsers(us); setLocations(locs); setVenues(vns);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to load users'); }
+    } catch (e) { toast.error(errMsg(e, 'Failed to load users')); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -68,7 +68,7 @@ const StaffPage = () => {
       toast.success('Staff authorization updated');
       setEditing(null);
       await load();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to update'); }
+    } catch (e) { toast.error(errMsg(e, 'Failed to update')); }
     finally { setSaving(false); }
   };
 

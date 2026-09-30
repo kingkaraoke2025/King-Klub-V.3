@@ -7,7 +7,7 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
   AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
-import { p2 } from '@/lib/phase2Api';
+import { p2, errMsg } from '@/lib/phase2Api';
 
 const STATUSES = ['draft', 'scheduled', 'active', 'ended', 'cancelled', 'archived'];
 const emptyEvent = { name: '', event_date: '', status: 'scheduled', starts_at: '', ends_at: '' };
@@ -19,6 +19,7 @@ const EventsPage = () => {
   const [venue, setVenue] = useState(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(null);
+  const [orig, setOrig] = useState(null);   // original event for status-only detection
   const [endedTarget, setEndedTarget] = useState(null);
 
   const load = async () => {
@@ -26,17 +27,32 @@ const EventsPage = () => {
       const [all, venues] = await Promise.all([p2.events(), p2.venues().catch(() => [])]);
       setEvents(all.filter((e) => e.venue_id === venueId));
       setVenue(venues.find((v) => v.id === venueId) || null);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to load events'); }
+    } catch (e) { toast.error(errMsg(e, 'Failed to load events')); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [venueId]);
 
   const save = async () => {
     try {
-      if (form.id) { await p2.updateEvent(form.id, form); toast.success('Event updated'); }
-      else { await p2.createEvent({ ...form, venue_id: venueId }); toast.success('Event created'); }
-      setForm(null); load();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Save failed'); }
+      if (form.id) {
+        // A pure status change (name/date/times unchanged) uses the dedicated status
+        // endpoint — never round-trip the whole event object for a status-only operation.
+        const infoUnchanged = orig && ['name', 'event_date', 'starts_at', 'ends_at']
+          .every((k) => (orig[k] ?? '') === (form[k] ?? ''));
+        const statusChanged = orig && orig.status !== form.status;
+        if (infoUnchanged && statusChanged) {
+          await p2.setEventStatus(form.id, form.status);
+          toast.success('Event status updated');
+        } else {
+          await p2.updateEvent(form.id, form);
+          toast.success('Event updated');
+        }
+      } else {
+        await p2.createEvent({ ...form, venue_id: venueId });
+        toast.success('Event created');
+      }
+      setForm(null); setOrig(null); load();
+    } catch (e) { toast.error(errMsg(e, 'Save failed')); }
   };
 
   // Non-ended events keep the legacy confirm + 409->archive fallback.
@@ -50,7 +66,7 @@ const EventsPage = () => {
         if (window.confirm(`Cannot delete — ${dep.participants} participant(s), ${dep.queue_items} queue, ${dep.battles} battle(s), ${dep.point_history} point record(s). Archive instead to preserve history?`)) {
           try { await p2.archiveEvent(ev.id); toast.success('Event archived'); load(); } catch (er) { toast.error('Archive failed'); }
         }
-      } else { toast.error(typeof d === 'string' ? d : 'Delete failed'); }
+      } else { toast.error(errMsg(e, 'Delete failed')); }
     }
   };
 
@@ -63,15 +79,12 @@ const EventsPage = () => {
     const ev = endedTarget;
     setEndedTarget(null);
     try { await p2.deleteEvent(ev.id); toast.success('Ended show permanently deleted'); load(); }
-    catch (e) {
-      const d = e.response?.data?.detail;
-      toast.error(typeof d === 'string' ? d : 'Delete failed');
-    }
+    catch (e) { toast.error(errMsg(e, 'Delete failed')); }
   };
 
   const toggleArchive = async (ev) => {
     try { await (ev.status === 'archived' ? p2.unarchiveEvent(ev.id) : p2.archiveEvent(ev.id)); toast.success(ev.status === 'archived' ? 'Event restored' : 'Event archived'); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
+    catch (e) { toast.error(errMsg(e, 'Failed')); }
   };
 
   return (
@@ -81,7 +94,7 @@ const EventsPage = () => {
       back={venue ? `/admin/phase2/locations/${venue.location_id}` : '/admin/phase2'}
       crumbs={[{ label: 'Locations', to: '/admin/phase2' }, { label: venue?.name || 'Venue' }, { label: 'Events' }]}
       actions={(
-        <button data-testid="add-event-btn" onClick={() => setForm({ ...emptyEvent })}
+        <button data-testid="add-event-btn" onClick={() => { setForm({ ...emptyEvent }); setOrig(null); }}
           className="bg-gold text-black font-semibold px-4 py-2 rounded-full flex items-center gap-2 hover:brightness-110 transition">
           <Plus className="w-4 h-4" /> New Event
         </button>
@@ -125,7 +138,7 @@ const EventsPage = () => {
                 <CalendarDays className="w-6 h-6 text-gold" />
                 <div className="flex items-center gap-1">
                   <StatusBadge status={ev.status} />
-                  <button data-testid={`edit-event-${ev.id}`} onClick={() => setForm({ ...ev })} className="text-white/40 hover:text-gold p-1" title="Edit"><Pencil className="w-4 h-4" /></button>
+                  <button data-testid={`edit-event-${ev.id}`} onClick={() => { setForm({ ...ev }); setOrig(ev); }} className="text-white/40 hover:text-gold p-1" title="Edit"><Pencil className="w-4 h-4" /></button>
                   <button data-testid={`archive-event-${ev.id}`} onClick={() => toggleArchive(ev)} className="text-white/40 hover:text-blue-300 p-1" title={ev.status === 'archived' ? 'Restore' : 'Archive'}>{ev.status === 'archived' ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}</button>
                   <button data-testid={`delete-event-${ev.id}`} onClick={() => onDeleteClick(ev)} className="text-white/40 hover:text-red-400 p-1" title="Delete"><Trash2 className="w-4 h-4" /></button>
                 </div>

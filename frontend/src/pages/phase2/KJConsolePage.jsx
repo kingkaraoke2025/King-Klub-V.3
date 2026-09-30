@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, CalendarDays, PlayCircle, QrCode, Users, Trophy, Star } from 'lucide-react';
 import { toast } from 'sonner';
 import { Phase2Shell, StatusBadge } from '@/components/Phase2Shell';
-import { p2 } from '@/lib/phase2Api';
+import { p2, errMsg } from '@/lib/phase2Api';
 
 // KJ Console: a KJ's home for running a show. Lists the events they're authorized
 // for (backend-scoped GET /admin/events), grouped by venue, and lets them SELECT
@@ -24,7 +24,7 @@ const KJConsolePage = () => {
         setEvents(evs);
         setVenues(vns);
       } catch (e) {
-        toast.error(e.response?.data?.detail || 'Failed to load your shows');
+        toast.error(errMsg(e, 'Failed to load your shows'));
       } finally {
         setLoading(false);
       }

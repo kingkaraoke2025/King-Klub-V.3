@@ -3,7 +3,7 @@ import { Trash2, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { Phase2Shell } from '@/components/Phase2Shell';
 import { useAuth } from '@/context/AuthContext';
-import { p2 } from '@/lib/phase2Api';
+import { p2, errMsg } from '@/lib/phase2Api';
 
 const DeletionAuditPage = () => {
   const { user } = useAuth();
@@ -13,7 +13,7 @@ const DeletionAuditPage = () => {
   useEffect(() => {
     (async () => {
       try { const r = await p2.eventDeletions(); setRows(r.deletions || []); }
-      catch (e) { toast.error(e.response?.data?.detail || 'Failed to load audit log'); }
+      catch (e) { toast.error(errMsg(e, 'Failed to load audit log')); }
       finally { setLoading(false); }
     })();
   }, []);

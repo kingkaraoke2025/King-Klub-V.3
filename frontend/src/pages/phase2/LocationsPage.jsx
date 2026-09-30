@@ -4,7 +4,7 @@ import { MapPin, Plus, Building2, Pencil, Trash2, Archive, ArchiveRestore, Clock
 import { toast } from 'sonner';
 import { Phase2Shell } from '@/components/Phase2Shell';
 import { useAuth } from '@/context/AuthContext';
-import { p2, isGlobalAdmin } from '@/lib/phase2Api';
+import { p2, isGlobalAdmin, errMsg } from '@/lib/phase2Api';
 
 const empty = { name: '', city: '', state: '', country: 'USA', zip_code: '', timezone: '' };
 
@@ -26,7 +26,7 @@ const LocationsPage = () => {
         locs = locs.filter((l) => allowed.has(l.id));
       }
       setLocations(locs);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to load locations'); }
+    } catch (e) { toast.error(errMsg(e, 'Failed to load locations')); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []); // eslint-disable-line
@@ -68,7 +68,7 @@ const LocationsPage = () => {
       if (form.id) { await p2.updateLocation(form.id, form); toast.success('Location updated'); }
       else { await p2.createLocation(form); toast.success('Location created'); }
       setForm(null); load();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Save failed'); }
+    } catch (e) { toast.error(errMsg(e, 'Save failed')); }
   };
 
   const doDelete = async (loc) => {
@@ -80,7 +80,7 @@ const LocationsPage = () => {
         const dep = d.dependents || {};
         if (window.confirm(`Cannot delete — it has ${dep.venues} venue(s), ${dep.events} event(s), ${dep.staff_assignments} staff assignment(s). Archive it instead to preserve history?`)) {
           try { await p2.archiveLocation(loc.id); toast.success('Location archived'); load(); }
-          catch (er) { toast.error(er.response?.data?.detail || 'Archive failed'); }
+          catch (er) { toast.error(errMsg(er, 'Archive failed')); }
         }
       } else { toast.error(typeof d === 'string' ? d : 'Delete failed'); }
     }
@@ -91,7 +91,7 @@ const LocationsPage = () => {
       if (loc.archived) { await p2.unarchiveLocation(loc.id); toast.success('Location restored'); }
       else { await p2.archiveLocation(loc.id); toast.success('Location archived'); }
       load();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
+    } catch (e) { toast.error(errMsg(e, 'Failed')); }
   };
 
   return (

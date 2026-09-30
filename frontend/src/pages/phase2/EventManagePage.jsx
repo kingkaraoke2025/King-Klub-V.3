@@ -19,7 +19,7 @@ import useEventSocket from '@/hooks/useEventSocket';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { p2, qrImage, FRONTEND_URL } from '@/lib/phase2Api';
+import { p2, qrImage, FRONTEND_URL, errMsg } from '@/lib/phase2Api';
 
 // ---- Sortable pending-queue row (mirrors old Admin/KJ panel) ----------------
 const SortableQueueItem = ({ item, pendingLen, onSetCurrent, onRemove, onMoveUp, onMoveDown }) => {
@@ -113,11 +113,11 @@ const EventManagePage = () => {
   const loadEvent = useCallback(async () => {
     try { setEvent(await p2.event(eventId)); }
     catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to load event');
+      toast.error(errMsg(e, 'Failed to load event'));
       if (e.response?.status === 403) navigate('/admin/kj');
     }
   }, [eventId, navigate]);
-  const loadQueue = useCallback(async () => { try { setQueue(await p2.eventQueue(eventId)); } catch (e) { toast.error(e.response?.data?.detail || 'Failed to load queue'); } }, [eventId]);
+  const loadQueue = useCallback(async () => { try { setQueue(await p2.eventQueue(eventId)); } catch (e) { toast.error(errMsg(e, 'Failed to load queue')); } }, [eventId]);
   const loadSingers = useCallback(async () => { try { setSingers((await p2.singerList(eventId)).singers); } catch (e) {} }, [eventId]);
   const loadBattles = useCallback(async () => { try { setBattles(await p2.battles(eventId)); } catch (e) {} }, [eventId]);
   const loadEventBoard = async () => { try { setBoard({ mode: 'event', rows: (await p2.eventLeaderboard(eventId)).leaderboard }); } catch (e) {} };
@@ -131,7 +131,7 @@ const EventManagePage = () => {
       const data = await p2.eventQR(forEvent);
       if (qrReqRef.current === reqId && forEvent === eventId) setQr(data);
     } catch (e) {
-      if (qrReqRef.current === reqId && forEvent === eventId) toast.error(e.response?.data?.detail || 'QR failed');
+      if (qrReqRef.current === reqId && forEvent === eventId) toast.error(errMsg(e, 'QR failed'));
     }
   };
 
@@ -199,7 +199,7 @@ const EventManagePage = () => {
   const checkinUrl = qr ? `${FRONTEND_URL}${qr.checkin_path}` : '';
   const copy = () => { navigator.clipboard.writeText(checkinUrl); setCopied(true); toast.success('Check-in URL copied'); setTimeout(() => setCopied(false), 1500); };
 
-  const qCtl = async (fn, ...args) => { try { const r = await fn(...args); if (r?.message) toast.success(r.message); loadQueue(); loadSingers(); } catch (e) { toast.error(e.response?.data?.detail || 'Action failed'); loadQueue(); } };
+  const qCtl = async (fn, ...args) => { try { const r = await fn(...args); if (r?.message) toast.success(r.message); loadQueue(); loadSingers(); } catch (e) { toast.error(errMsg(e, 'Action failed')); loadQueue(); } };
 
   const handleDragEnd = async (evt) => {
     const { active, over } = evt;
@@ -212,7 +212,7 @@ const EventManagePage = () => {
     const reordered = arrayMove(pending, oldIndex, newIndex).map((it, i) => ({ ...it, position: i + 1 }));
     setQueue((prev) => { const cur = prev.find((i) => i.status === 'current'); return cur ? [cur, ...reordered] : reordered; });
     try { await p2.reorderQueue(eventId, active.id, newIndex + 1); toast.success(`Moved to #${newIndex + 1}`); loadQueue(); }
-    catch (e) { toast.error(e.response?.data?.detail || 'Failed to reorder'); loadQueue(); }
+    catch (e) { toast.error(errMsg(e, 'Failed to reorder')); loadQueue(); }
   };
 
   // Open the award dialog and mint a fresh idempotency key for THIS award session.
@@ -243,17 +243,17 @@ const EventManagePage = () => {
         toast.info('That award was already applied — not awarded again.');
         setAwardFor(null); setCustomPts(''); loadSingers();
       } else {
-        toast.error(e.response?.data?.detail || 'Award failed');
+        toast.error(errMsg(e, 'Award failed'));
       }
     } finally { setAwarding(false); }
   };
 
-  const bCtl = async (fn, ...args) => { try { const r = await fn(...args); if (r?.message) toast.success(r.message); loadBattles(); loadSingers(); } catch (e) { toast.error(e.response?.data?.detail || 'Action failed'); } };
+  const bCtl = async (fn, ...args) => { try { const r = await fn(...args); if (r?.message) toast.success(r.message); loadBattles(); loadSingers(); } catch (e) { toast.error(errMsg(e, 'Action failed')); } };
   const createBattle = async () => {
     if (!newBattle.challenger_id || !newBattle.opponent_id || !newBattle.challenge_type) { toast.error('Pick both singers and a battle type'); return; }
     if (newBattle.challenger_id === newBattle.opponent_id) { toast.error('Pick two different singers'); return; }
     try { await p2.createBattle(eventId, newBattle); toast.success('Battle created'); setNewBattle({ challenger_id: '', opponent_id: '', challenge_type: '' }); loadBattles(); }
-    catch (e) { toast.error(e.response?.data?.detail || 'Failed to create battle'); }
+    catch (e) { toast.error(errMsg(e, 'Failed to create battle')); }
   };
 
   const filteredSingers = singers.filter((s) => s.display_name?.toLowerCase().includes(userSearch.toLowerCase()));

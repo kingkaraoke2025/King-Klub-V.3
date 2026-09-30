@@ -4,7 +4,7 @@ import { Building2, Plus, CalendarDays, Pencil, Trash2, Archive, ArchiveRestore 
 import { toast } from 'sonner';
 import { Phase2Shell } from '@/components/Phase2Shell';
 import { useAuth } from '@/context/AuthContext';
-import { p2, isGlobalAdmin } from '@/lib/phase2Api';
+import { p2, isGlobalAdmin, errMsg } from '@/lib/phase2Api';
 const VenuesPage = () => {
   const { locationId } = useParams();
   const navigate = useNavigate();
@@ -21,7 +21,7 @@ const VenuesPage = () => {
       const [vs, locs] = await Promise.all([p2.venues(locationId), p2.locations().catch(() => [])]);
       setVenues(vs);
       setLocation(locs.find((l) => l.id === locationId) || null);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to load venues'); }
+    } catch (e) { toast.error(errMsg(e, 'Failed to load venues')); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [locationId]);
@@ -31,7 +31,7 @@ const VenuesPage = () => {
       if (form.id) { await p2.updateVenue(form.id, { ...form, location_id: locationId }); toast.success('Venue updated'); }
       else { await p2.createVenue({ ...form, location_id: locationId }); toast.success('Venue created'); }
       setForm(null); load();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Save failed'); }
+    } catch (e) { toast.error(errMsg(e, 'Save failed')); }
   };
 
   const doDelete = async (v) => {
@@ -49,7 +49,7 @@ const VenuesPage = () => {
   };
   const toggleArchive = async (v) => {
     try { await (v.archived ? p2.unarchiveVenue(v.id) : p2.archiveVenue(v.id)); toast.success(v.archived ? 'Venue restored' : 'Venue archived'); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || 'Failed'); }
+    catch (e) { toast.error(errMsg(e, 'Failed')); }
   };
 
   return (

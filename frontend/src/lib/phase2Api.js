@@ -29,6 +29,7 @@ export const p2 = {
   event: (id) => axios.get(`${API}/admin/events/${id}`).then((r) => r.data),
   createEvent: (d) => axios.post(`${API}/admin/events`, d).then((r) => r.data),
   updateEvent: (id, d) => axios.put(`${API}/admin/events/${id}`, d).then((r) => r.data),
+  setEventStatus: (id, status) => axios.put(`${API}/admin/events/${id}/status`, { status }).then((r) => r.data),
   deleteEvent: (id) => axios.delete(`${API}/admin/events/${id}`).then((r) => r.data),
   archiveEvent: (id) => axios.post(`${API}/admin/events/${id}/archive`).then((r) => r.data),
   unarchiveEvent: (id) => axios.post(`${API}/admin/events/${id}/unarchive`).then((r) => r.data),
@@ -64,6 +65,39 @@ export const p2 = {
   setStaff: (userId, body) => axios.put(`${API}/admin/users/${userId}/staff`, body).then((r) => r.data),
   // Permanent-deletion audit trail (read-only; scoped server-side)
   eventDeletions: () => axios.get(`${API}/admin/event-deletions`).then((r) => r.data),
+};
+
+/**
+ * Safely convert ANY API/axios error into a readable, single-line string.
+ * Handles: string detail, FastAPI/Pydantic detail arrays ([{type,loc,msg,input,url}]),
+ * a single validation-error object, {detail:"..."}, {message:"..."}, errors without a
+ * response, and unexpected objects. NEVER returns an object/array — so it is always
+ * safe to pass to toast.error(...) or render in JSX (fixes "Objects are not valid as
+ * a React child" crashes on 422 responses).
+ */
+export const errMsg = (e, fallback = 'Something went wrong') => {
+  const d = e?.response?.data?.detail;
+  if (typeof d === 'string') return d;
+  if (Array.isArray(d)) {
+    const parts = d.map((it) => {
+      if (typeof it === 'string') return it;
+      if (it && typeof it === 'object') {
+        const field = Array.isArray(it.loc) && it.loc.length ? it.loc[it.loc.length - 1] : undefined;
+        const m = it.msg || it.message || 'Invalid value';
+        return field ? `${m}: ${field}` : m;
+      }
+      return null;
+    }).filter(Boolean);
+    if (parts.length) return parts.join('; ');
+  }
+  if (d && typeof d === 'object') {
+    if (typeof d.msg === 'string') return d.msg;
+    if (typeof d.message === 'string') return d.message;
+  }
+  const msg = e?.response?.data?.message;
+  if (typeof msg === 'string') return msg;
+  if (typeof e?.message === 'string') return e.message;
+  return fallback;
 };
 
 export const qrImage = (url) =>
