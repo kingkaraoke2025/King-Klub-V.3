@@ -493,3 +493,20 @@ Four targeted hardening improvements around the KJ ended-event permanent delete.
 **Seed:** `seed_dev.py` gained idempotent `ensure_active_event()` so KJ's Test Venue always has one active "Run Show" target out-of-the-box.
 
 **Deferred (per user):** event-scoped announcements/KJ-messaging feature (build later); singer-side event-battle voting UI does not exist yet (realtime wired for what exists).
+
+---
+
+## 2026-06 — Fix: "End Event" React crash (Pydantic 422 rendered as React child)
+
+**Symptom:** Setting an event status to *Ended* crashed the app with *"Objects are not valid as a React child (found: object with keys {type, loc, msg, input, url})"* — for BOTH Dev Admin and Venue KJ (not a permission issue).
+
+**Root cause (Case B — backend rejected, event never ended):** `EventsPage.save()` round-tripped the FULL event object to `PUT /api/admin/events/{id}` for every edit incl. status-only changes. A legacy record (`WS Test Show`) had a missing `event_date`; the general endpoint's `EventInput` requires it → **422** with a Pydantic `detail` ARRAY. The catch block did `toast.error(e.response.data.detail)` — passing the array of objects straight to sonner/JSX → React crash. Would crash on ANY 422.
+
+**Fix (DEV/STAGING only, no production, no business-rule/auth changes):**
+- Added shared `errMsg(e, fallback)` in `phase2Api.js` — safely coerces string / Pydantic array (`"Field required: event_date"`) / single object / `{message}` / no-response / unexpected → always a string. Replaced every unsafe `toast.error(e.response?.data?.detail || …)` across all Phase-2 pages (Events, Locations, Venues, Staff, DeletionAudit, EventManage, KJConsole). Type-checked 409-dependent handlers left intact.
+- Status-only change now uses the **dedicated** `PUT /api/admin/events/{id}/status` (`p2.setEventStatus`): `EventsPage.save()` detects that name/date/times are unchanged and only status changed → calls the status endpoint (validates just `{status}`, `authz.require_event_staff`, broadcasts `EVENT_UPDATED`). General edits still use the full PUT — **validation NOT weakened** (missing `event_date` still 422s).
+- Backfilled DEV `WS Test Show` (`e7165f07…`) `event_date` → `2026-06-01`.
+
+**Tests:** `backend/test_event_end_status.py` **14/14** (admin+KJ Active→Ended 200 & DB flip, EVENT_UPDATED delivered to subscribed WS client, singer 403, out-of-scope KJ 403, general PUT still 422 on missing event_date, ended event blocks new check-in & preserves history). `frontend/src/lib/phase2Api.errMsg.test.js` **8/8** (all error shapes → string, never object/array). testing_agent **iteration_18: 100%** — End Event flow shows no React crash overlay for both roles, dedicated status endpoint used, badge flips to ended, historical visibility retained, name-only edit still uses general PUT.
+
+**Known pre-existing (not this task):** legacy global `/api/ws` (useVoteNotification) logs connect noise on some pages — separate P2 cleanup item.
