@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Crown, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { p2 } from '@/lib/phase2Api';
+import { p2, errMsg } from '@/lib/phase2Api';
 
 const EventCheckInPage = () => {
   const { token } = useParams();
@@ -18,7 +18,7 @@ const EventCheckInPage = () => {
         const data = await p2.checkin(token);
         setState({ status: 'ok', data, error: null });
       } catch (e) {
-        setState({ status: 'error', data: null, error: e.response?.data?.detail || 'Check-in failed' });
+        setState({ status: 'error', data: null, error: errMsg(e, 'Check-in failed') });
       }
     })();
   }, [user, loading, token, navigate]);

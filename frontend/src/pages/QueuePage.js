@@ -4,6 +4,7 @@ import { Mic2, Clock, Plus, X, Music, User, Loader2, MessageSquare, Zap, Crown, 
 import { Layout } from '@/components/Layout';
 import { useAuth } from '@/context/AuthContext';
 import useEventSocket from '@/hooks/useEventSocket';
+import { errMsg } from '@/lib/phase2Api';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
@@ -148,8 +149,7 @@ const QueuePage = () => {
       fetchPerkStatus(id);
       fetchQueueStatus(id);
     } catch (error) {
-      const message = error.response?.data?.detail || 'Failed to add to queue';
-      toast.error(message);
+      toast.error(errMsg(error, 'Failed to add to queue'));
     } finally {
       setAddingToQueue(false);
     }
@@ -165,7 +165,7 @@ const QueuePage = () => {
       fetchQueue(activeEvent.id);
       fetchPerkStatus(activeEvent.id);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to use perk');
+      toast.error(errMsg(error, 'Failed to use perk'));
     } finally {
       setUsingPerk(false);
     }

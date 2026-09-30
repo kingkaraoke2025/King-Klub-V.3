@@ -510,3 +510,14 @@ Four targeted hardening improvements around the KJ ended-event permanent delete.
 **Tests:** `backend/test_event_end_status.py` **14/14** (admin+KJ Active→Ended 200 & DB flip, EVENT_UPDATED delivered to subscribed WS client, singer 403, out-of-scope KJ 403, general PUT still 422 on missing event_date, ended event blocks new check-in & preserves history). `frontend/src/lib/phase2Api.errMsg.test.js` **8/8** (all error shapes → string, never object/array). testing_agent **iteration_18: 100%** — End Event flow shows no React crash overlay for both roles, dedicated status endpoint used, badge flips to ended, historical visibility retained, name-only edit still uses general PUT.
 
 **Known pre-existing (not this task):** legacy global `/api/ws` (useVoteNotification) logs connect noise on some pages — separate P2 cleanup item.
+
+---
+
+## 2026-06 — Defensive error-handling extension (Non-Critical #1, narrow scope)
+
+Extended the existing `errMsg()` helper to the remaining Phase-2-relevant surfaces so a structured Pydantic/FastAPI 422 (array of `{type,loc,msg,input,url}`) can never render as a React child. NO backend/business-logic/WS/poll changes.
+- `QueuePage.js`: add-to-queue and use-perk catch blocks now use `errMsg(error, …)` (imported from phase2Api).
+- `EventCheckInPage.jsx`: error state now set via `errMsg(e, 'Check-in failed')` (was rendered into JSX directly).
+- Tests: `frontend/src/lib/phase2Api.errMsg.test.js` 8/8 (unchanged) + new `frontend/src/pages/phase2ErrorHandling.test.js` 7/7 (add-to-queue / use-perk / EventCheckInPage 422→readable string, string passthrough, fallback). Backend regression: `test_event_song_points` 11/11, `test_manual_award_lifetime` 19/19.
+- LEFT for a future separate cleanup (per instruction): QRCheckInPage, BattlesPage, AdminPage, VotePopup, CheckInPage, Login/Register/AdminLogin.
+- Known DEV-data note: `kj@` is currently assigned to ALL 4 DEV venues, so the out-of-scope-rejection assertions in `test_realtime_ws` / `test_event_end_status` can't be exercised (they pick an "other" venue that is actually in-scope → 200). Authorization code unchanged; not a regression.
